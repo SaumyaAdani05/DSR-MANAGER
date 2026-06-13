@@ -1,0 +1,40 @@
+mutation CreateSeedData @transaction {
+  station_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      name: "Downtown Station",
+      locationAddress: "123 Main St"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440002",
+      name: "Airport Station",
+      locationAddress: "456 Runway Rd"
+    }
+  ])
+  product_insertMany(data: [
+    {
+      name: "Water",
+      category: "Beverage",
+      unitPrice: 1.50,
+      stockQuantity: 100
+    },
+    {
+      name: "Snickers",
+      category: "Snack",
+      unitPrice: 2.00,
+      stockQuantity: 50
+    }
+  ])
+  pump_insertMany(data: [
+    {
+      pumpNumber: 1,
+      fuelType: "Regular",
+      station: { id: "550e8400-e29b-41d4-a716-446655440001" }
+    },
+    {
+      pumpNumber: 2,
+      fuelType: "Diesel",
+      station: { id: "550e8400-e29b-41d4-a716-446655440002" }
+    }
+  ])
+}

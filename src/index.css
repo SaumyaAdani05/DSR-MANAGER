@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Remove number input spinners (Chrome, Safari, Edge, Firefox) ── */
+@layer base {
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  /* ── Smooth scrolling ── */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* ── Text selection colors ── */
+  ::selection {
+    background-color: #003087;
+    color: #ffffff;
+  }
+
+  ::-moz-selection {
+    background-color: #003087;
+    color: #ffffff;
+  }
+
+  /* ── Custom scrollbar (thin, navy-themed) ── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f4f5f7;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #003087;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #001f5b;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #003087 #f4f5f7;
+  }
+}

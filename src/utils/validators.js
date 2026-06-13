@@ -1,0 +1,61 @@
+import { isReconciled } from './calculations';
+import { PASSWORD_RULES } from './constants';
+
+export const validateRow = (row, rowIndex) => {
+  const errors = [];
+
+  if (!row.nozzleId) errors.push({ field: 'Nozzle', message: 'Nozzle is required' });
+  if (!row.employeeId) errors.push({ field: 'Employee', message: 'Employee is required' });
+  if (!row.openingReading || row.openingReading <= 0)
+    errors.push({ field: 'Opening Reading', message: 'Opening Reading must be greater than 0' });
+  if (!row.closingReading || row.closingReading <= 0)
+    errors.push({ field: 'Closing Reading', message: 'Closing Reading must be greater than 0' });
+  if (row.closingReading < row.openingReading)
+    errors.push({ field: 'Closing Reading', message: 'Closing Reading must be ≥ Opening Reading' });
+  if (row.cash < 0) errors.push({ field: 'Cash', message: 'Cash cannot be negative' });
+  if (row.cc < 0) errors.push({ field: 'CC', message: 'CC cannot be negative' });
+  if (row.upi < 0) errors.push({ field: 'UPI', message: 'UPI cannot be negative' });
+  if (row.salesRs > 0 && !isReconciled(row))
+    errors.push({
+      field: 'Reconciliation',
+      message: `Cash + CC + UPI (${(row.cash + row.cc + row.upi).toFixed(2)}) ≠ Sales (${row.salesRs.toFixed(2)})`,
+    });
+
+  return errors.length > 0 ? { rowIndex: rowIndex + 1, nozzle: row.nozzleName || `Row ${rowIndex + 1}`, errors } : null;
+};
+
+export const validateShift = (shiftData) => {
+  const errors = [];
+
+  if (!shiftData.price || shiftData.price <= 0) {
+    errors.push({ rowIndex: 0, nozzle: 'Header', errors: [{ field: 'Price', message: "Today's Price must be greater than 0" }] });
+  }
+
+  shiftData.rows.forEach((row, i) => {
+    const rowErrors = validateRow(row, i);
+    if (rowErrors) errors.push(rowErrors);
+  });
+
+  return errors;
+};
+
+export const validatePassword = (password) => {
+  const { minLength, maxLength } = PASSWORD_RULES;
+  if (password.length < minLength || password.length > maxLength) return false;
+  if (!/[a-z]/.test(password)) return false;
+  if (!/[A-Z]/.test(password)) return false;
+  if (!/\d/.test(password)) return false;
+  if (!/[@#$]/.test(password)) return false;
+  return /^[A-Za-z\d@#$]{6,12}$/.test(password);
+};
+
+export const getPasswordErrors = (password) => {
+  const errors = [];
+  if (password.length < 6) errors.push('Minimum 6 characters');
+  if (password.length > 12) errors.push('Maximum 12 characters');
+  if (!/[a-z]/.test(password)) errors.push('At least one lowercase letter');
+  if (!/[A-Z]/.test(password)) errors.push('At least one uppercase letter');
+  if (!/\d/.test(password)) errors.push('At least one number');
+  if (!/[@#$]/.test(password)) errors.push('At least one special character (@, #, $)');
+  return errors;
+};

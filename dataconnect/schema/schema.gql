@@ -1,0 +1,42 @@
+type Station @table {
+  name: String!
+  locationAddress: String!
+  contactPhone: String
+}
+
+type Pump @table {
+  pumpNumber: Int!
+  fuelType: String!
+  station: Station!
+}
+
+type Tank @table {
+  tankName: String!
+  capacityLiters: Float!
+  currentLevel: Float!
+  station: Station!
+}
+
+type ShiftReport @table {
+  date: Date!
+  shiftStartTime: Timestamp!
+  shiftEndTime: Timestamp!
+  fuelSalesTotal: Float!
+  storeSalesTotal: Float!
+  cashOnHands: Float!
+  station: Station!
+}
+
+type InventoryReading @table {
+  readingValue: Float!
+  timestamp: Timestamp!
+  tank: Tank!
+  shiftReport: ShiftReport!
+}
+
+type Product @table {
+  name: String!
+  category: String!
+  unitPrice: Float!
+  stockQuantity: Int
+}
