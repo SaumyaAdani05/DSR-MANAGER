@@ -25,6 +25,8 @@ export default {
       },
       boxShadow: {
         card: '0 2px 8px rgba(0, 48, 135, 0.12)',
+        'card-hover': '0 4px 16px rgba(0, 48, 135, 0.18)',
+        glow: '0 0 20px rgba(0, 48, 135, 0.15)',
       },
       animation: {
         'modal-in': 'modalIn 200ms ease-out',
@@ -33,11 +35,16 @@ export default {
         'shake': 'shake 300ms ease-in-out',
         'toast-in': 'toastIn 250ms ease-out',
         'toast-out': 'toastOut 200ms ease-in',
+        'fade-in': 'fadeIn 200ms ease-out',
+        'fade-in-up': 'fadeInUp 300ms ease-out',
+        'pulse-dot': 'pulseDot 2s ease-in-out infinite',
+        'check-in': 'checkIn 400ms ease-out',
+        'scale-in': 'scaleIn 200ms ease-out',
       },
       keyframes: {
         modalIn: {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
+          '0%': { opacity: '0', transform: 'scale(0.95) translateY(8px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
         },
         slideIn: {
           '0%': { transform: 'translateX(100%)' },
@@ -59,6 +66,27 @@ export default {
         toastOut: {
           '0%': { opacity: '1', transform: 'translateY(0)' },
           '100%': { opacity: '0', transform: 'translateY(-16px)' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        fadeInUp: {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        pulseDot: {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.5', transform: 'scale(1.3)' },
+        },
+        checkIn: {
+          '0%': { opacity: '0', transform: 'scale(0) rotate(-45deg)' },
+          '60%': { opacity: '1', transform: 'scale(1.1) rotate(0deg)' },
+          '100%': { transform: 'scale(1) rotate(0deg)' },
+        },
+        scaleIn: {
+          '0%': { opacity: '0', transform: 'scale(0.9)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
         },
       },
     },

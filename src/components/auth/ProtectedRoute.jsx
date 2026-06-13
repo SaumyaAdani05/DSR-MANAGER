@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import LoadingSpinner from '../ui/LoadingSpinner';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -7,7 +8,7 @@ const ProtectedRoute = ({ children }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-adani-lightGray">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-adani-navy" />
+        <LoadingSpinner size="lg" label="Authenticating" />
       </div>
     );
   }

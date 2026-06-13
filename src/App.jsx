@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
+import { ShiftProvider } from './context/ShiftContext';
+import { SyncProvider } from './context/SyncContext';
 import { SettingsProvider } from './context/SettingsContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
@@ -9,6 +11,7 @@ import SecuritySetup from './components/auth/SecuritySetup';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import HistoryPage from './pages/HistoryPage';
+import CalendarPage from './pages/CalendarPage';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import OfflineBanner from './components/layout/OfflineBanner';
 
@@ -18,8 +21,10 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <SettingsProvider>
-          {!isOnline && <OfflineBanner />}
+        <ShiftProvider>
+          <SyncProvider>
+            <SettingsProvider>
+              {!isOnline && <OfflineBanner />}
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -36,6 +41,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/:date"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <ProtectedRoute>
+                  <CalendarPage />
                 </ProtectedRoute>
               }
             />
@@ -75,7 +96,9 @@ function App() {
               },
             }}
           />
-        </SettingsProvider>
+         </SettingsProvider>
+       </SyncProvider>
+      </ShiftProvider>
       </AuthProvider>
     </BrowserRouter>
   );

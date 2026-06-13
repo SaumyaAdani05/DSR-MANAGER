@@ -1,57 +1,75 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useShift } from '../context/ShiftContext';
 import { useSettings } from '../context/SettingsContext';
 import Header from '../components/layout/Header';
 import SideDrawer from '../components/layout/SideDrawer';
-import DatePicker from '../components/calendar/DatePicker';
 import ShiftTabs from '../components/shift/ShiftTabs';
 import ShiftGrid from '../components/shift/ShiftGrid';
+import DailySalesBar from '../components/shift/DailySalesBar';
 import ExportDSR from '../components/export/ExportDSR';
 import MonthlyReport from '../components/export/MonthlyReport';
-import { getCalendarData, getShift, saveShift as saveShiftService, forceUpdateCarryover } from '../services/shiftService';
+import { getShift, saveShift as saveShiftService, forceUpdateCarryover } from '../services/shiftService';
 import { cleanOldRecords } from '../services/cleanupService';
-import { getTodayStr, isToday, isEditable, getPreviousDateStr } from '../utils/dateUtils';
+import { isToday, isWithinRetention, getPreviousDateStr } from '../utils/dateUtils';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 const DashboardPage = () => {
   const { logout } = useAuth();
+  const { date: routeDate } = useParams();
+  const {
+    selectedDate,
+    selectDate,
+    activeShift,
+    switchShift,
+    shiftData,
+    datesWithData,
+    loadCalendar,
+    loadAllShifts,
+    shiftLoading: loading,
+    updateLocalShiftData,
+  } = useShift();
+
   const { stationName, nozzles, allNozzles, employees, allEmployees } = useSettings();
   const navigate = useNavigate();
 
-  const [selectedDate, setSelectedDate] = useState(getTodayStr());
-  const [activeShift, setActiveShift] = useState(1);
-  const [shiftData, setShiftData] = useState({ shift1: null, shift2: null, shift3: null });
-  const [datesWithData, setDatesWithData] = useState([]);
   const [carryoverData, setCarryoverData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [monthlyOpen, setMonthlyOpen] = useState(false);
+
+  // Sync route date param with context selectedDate
+  useEffect(() => {
+    if (routeDate && routeDate !== selectedDate) {
+      selectDate(routeDate);
+    }
+  }, [routeDate, selectedDate, selectDate]);
 
   // Load calendar metadata + cleanup on mount
   useEffect(() => {
     const init = async () => {
       try {
         await cleanOldRecords();
-        const dates = await getCalendarData();
-        setDatesWithData(dates);
+        await loadCalendar();
       } catch (error) {
         console.error('Init error:', error);
       }
     };
     init();
-  }, []);
+  }, [loadCalendar]);
 
-  // Load shift data when date or active shift changes
-  const loadShiftData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const shift = await getShift(selectedDate, activeShift);
-      setShiftData((prev) => ({ ...prev, [`shift${activeShift}`]: shift }));
+  // Load all shifts when date changes
+  useEffect(() => {
+    loadAllShifts(selectedDate);
+  }, [selectedDate, loadAllShifts]);
 
-      // Load carryover if shift has no data
-      if (!shift) {
+  // Compute carryover data
+  useEffect(() => {
+    const checkCarryover = async () => {
+      const currentShift = shiftData[activeShift];
+      if (!currentShift) {
         let carryover = null;
         if (activeShift === 1) {
           // Carryover from previous day's Shift 3
@@ -62,14 +80,13 @@ const DashboardPage = () => {
               openingReading: r.closingReading,
             }));
           }
-          // Check carryover price
           if (prevShift3?.price) {
             carryover = carryover || [];
             carryover.price = prevShift3.price;
           }
         } else {
           // Carryover from previous shift same day
-          const prevShift = await getShift(selectedDate, activeShift - 1);
+          const prevShift = shiftData[activeShift - 1];
           if (prevShift?.rows) {
             carryover = prevShift.rows.map((r) => ({
               openingReading: r.closingReading,
@@ -84,66 +101,32 @@ const DashboardPage = () => {
       } else {
         setCarryoverData(null);
       }
-
-      // Determine active tab: last saved shift
-      if (activeShift === 1) {
-        for (let i = 3; i >= 1; i--) {
-          const s = i === activeShift ? shift : await getShift(selectedDate, i);
-          if (s?.isSaved) {
-            setActiveShift(i);
-            break;
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Load shift error:', error);
-      toast.error('Failed to load shift data');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedDate, activeShift]);
-
-  useEffect(() => {
-    loadShiftData();
-  }, [selectedDate, activeShift, loadShiftData]);
-
-  // Load all shift statuses for tabs
-  const [shiftStatuses, setShiftStatuses] = useState([{}, {}, {}]);
-  useEffect(() => {
-    const loadStatuses = async () => {
-      const statuses = [];
-      for (let i = 1; i <= 3; i++) {
-        const s = shiftData[`shift${i}`] || (await getShift(selectedDate, i));
-        statuses.push({
-          isSaved: s?.isSaved || false,
-          isLocked: s?.isSaved && !isEditable(s),
-        });
-      }
-      setShiftStatuses(statuses);
     };
-    loadStatuses();
-  }, [selectedDate, shiftData]);
+    checkCarryover();
+  }, [selectedDate, activeShift, shiftData]);
 
-  const handleDateSelect = (dateStr) => {
-    if (!isToday(dateStr)) {
-      navigate(`/history/${dateStr}`);
-      return;
-    }
-    setSelectedDate(dateStr);
-    setActiveShift(1);
-  };
+  // Calculate shift statuses for tabs
+  const shiftStatuses = [1, 2, 3].map((i) => {
+    const s = shiftData[i];
+    return {
+      isSaved: s?.isSaved || false,
+      isLocked: false, // Shifts are never locked in v2.0
+    };
+  });
 
   const handleSave = async (date, shiftNum, shiftPayload) => {
     const savedDoc = await saveShiftService(date, shiftNum, shiftPayload);
-    setShiftData((prev) => ({ ...prev, [`shift${shiftNum}`]: savedDoc }));
+    updateLocalShiftData(shiftNum, savedDoc);
 
     // Update calendar
-    if (!datesWithData.includes(date)) {
-      setDatesWithData((prev) => [...prev, date]);
-    }
+    await loadCalendar();
 
     // Force-update carryover on next shift
     const carryoverUpdated = await forceUpdateCarryover(date, shiftNum, shiftPayload.rows);
+
+    // Reload all shifts to get the updated carryover values in subsequent shifts
+    await loadAllShifts(date);
+
     return { carryoverUpdated };
   };
 
@@ -152,8 +135,8 @@ const DashboardPage = () => {
     navigate('/login');
   };
 
-  const currentShift = shiftData[`shift${activeShift}`];
-  const isReadOnly = !isToday(selectedDate);
+  const currentShift = shiftData[activeShift];
+  const isReadOnly = !isWithinRetention(selectedDate);
 
   return (
     <div className="min-h-screen bg-adani-lightGray">
@@ -168,39 +151,33 @@ const DashboardPage = () => {
       />
 
       <main className="max-w-[1320px] mx-auto px-4 py-6">
-        <div className="flex gap-6 flex-col lg:flex-row">
-          {/* Calendar */}
-          <div className="flex-shrink-0">
-            <DatePicker
-              selectedDate={selectedDate}
-              datesWithData={datesWithData}
-              onDateSelect={handleDateSelect}
-            />
-          </div>
-
+        <div className="flex flex-col gap-6">
           {/* Shift area */}
           <div className="flex-1 min-w-0">
             <ShiftTabs
               activeShift={activeShift}
-              onShiftChange={setActiveShift}
+              onShiftChange={switchShift}
               shiftStatuses={shiftStatuses}
             />
 
             {loading ? (
               <div className="flex items-center justify-center py-20 bg-white rounded-b-lg shadow-card">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-adani-navy" />
+                <LoadingSpinner size="lg" label="Loading shift data" />
               </div>
             ) : (
-              <ShiftGrid
-                date={selectedDate}
-                shiftNumber={activeShift}
-                shiftData={currentShift}
-                nozzles={allNozzles || nozzles}
-                employees={allEmployees || employees}
-                onSave={handleSave}
-                readOnly={isReadOnly}
-                carryoverData={carryoverData}
-              />
+              <>
+                <ShiftGrid
+                  date={selectedDate}
+                  shiftNumber={activeShift}
+                  shiftData={currentShift}
+                  nozzles={allNozzles || nozzles}
+                  employees={allEmployees || employees}
+                  onSave={handleSave}
+                  readOnly={isReadOnly}
+                  carryoverData={carryoverData}
+                />
+                <DailySalesBar shiftData={shiftData} />
+              </>
             )}
           </div>
         </div>

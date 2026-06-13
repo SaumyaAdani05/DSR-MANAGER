@@ -11,8 +11,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/firestore\.googleapis\.com/,
-            handler: 'StaleWhileRevalidate',
+            urlPattern: /^https:\/\/.*\.supabase\.co/,
+            handler: 'NetworkFirst',
+            options: { cacheName: 'supabase-cache' },
           },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com/,
@@ -51,4 +52,17 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-xlsx': ['xlsx'],
+          'vendor-pdf': ['jspdf', 'jspdf-autotable'],
+          'vendor-crypto': ['bcryptjs'],
+          'vendor-utils': ['date-fns', 'date-fns-tz', 'uuid', 'react-hot-toast'],
+        },
+      },
+    },
+  },
 });

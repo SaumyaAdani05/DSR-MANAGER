@@ -22,6 +22,10 @@ const TotalRow = ({ totals }) => {
       <td className="px-2 py-3 text-right text-sm text-adani-navy">
         {formatNumber(totals?.totalCash || 0)}
       </td>
+      <td className="px-2 py-3 text-right text-sm text-adani-navy">
+        {formatNumber(totals?.totalCashParty || 0)}
+      </td>
+      <td className="px-2 py-3"></td>
     </tr>
   );
 };

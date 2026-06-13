@@ -1,593 +1,610 @@
 # Implementation Plan
 ## DSR Manager — Gas Station Daily Sales Record Web App
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** June 2026  
-**Stack:** React 18 + Tailwind CSS + Firebase Firestore + Vercel
+**Stack:** React 18 + Tailwind CSS + Dexie.js + Supabase + Vercel
 
 ---
 
 ## 1. Pre-Development Checklist
 
-Before writing any code, complete the following:
-
-### 1.1 Firebase Setup
-- [ ] Create a new Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-- [ ] Enable **Firestore Database** (start in production mode)
-- [ ] Copy Firebase config object (apiKey, projectId, etc.)
-- [ ] Deploy initial Firestore Security Rules (from TRD Section 20)
-- [ ] Create composite indexes (from Backend Schema Section 8)
-- [ ] Enable **Firestore Offline Persistence** in code
+### 1.1 Supabase Setup (owner does once)
+- [ ] Create free account at [supabase.com](https://supabase.com)
+- [ ] Create a new project (free tier)
+- [ ] Copy Project URL + anon public key
+- [ ] Paste into DSR Manager → Settings → Supabase Config on first use
+- [ ] App will auto-create tables on first sync
 
 ### 1.2 Vercel Setup
-- [ ] Create Vercel account at [vercel.com](https://vercel.com)
+- [ ] Create account at [vercel.com](https://vercel.com)
 - [ ] Install Vercel CLI: `npm i -g vercel`
-- [ ] Have project folder ready to link
 
 ### 1.3 Development Environment
 - [ ] Install Node.js v18+
-- [ ] Install Git
-- [ ] Create project: `npm create vite@latest dsr-manager -- --template react`
-- [ ] Set up `.env` file with Firebase credentials
-- [ ] Install all dependencies (see TRD Section 19)
+- [ ] Scaffold project: `npm create vite@latest dsr-manager -- --template react`
+- [ ] Install all dependencies (see TRD Section 16)
+- [ ] Create `.env` with Supabase credentials
+- [ ] Set up folder structure (see TRD Section 2)
 
-### 1.4 Seed Initial Data
-- [ ] Write a one-time seed script to create `/auth/owner` document with:
-  - `username: "Adani0510"`
-  - `passwordHash: bcrypt("Adani@mem0510", 10)`
-  - `isFirstLogin: true`
-- [ ] Run seed script before first deployment
+### 1.4 Seed Initial Data (run once in browser console after first load)
+```javascript
+// Seed owner credentials into Dexie on first launch
+import bcrypt from 'bcryptjs';
+import { db } from './src/db/localDB';
+
+const hash = await bcrypt.hash('Adani@mem0510', 10);
+await db.auth.put({
+  id: 'owner',
+  username: 'Adani0510',
+  passwordHash: hash,
+  securityQuestion: '',
+  securityAnswerHash: '',
+  isFirstLogin: true,
+  updatedAt: new Date().toISOString(),
+});
+await db.settings.put({
+  id: 'main',
+  stationName: 'Memnagar CNG',
+  supabaseUrl: '',
+  supabaseKey: '',
+  updatedAt: new Date().toISOString(),
+});
+```
 
 ---
 
 ## 2. Development Phases Overview
 
-| Phase | Name | Estimated Effort | Priority |
-|-------|------|-----------------|---------|
+| Phase | Name | Effort | Priority |
+|-------|------|--------|---------|
 | 0 | Project Setup & Config | 1 day | Critical |
-| 1 | Authentication | 2 days | Critical |
-| 2 | Settings & Config | 2 days | Critical |
-| 3 | Shift Entry Grid | 4 days | Critical |
-| 4 | Carryover & Validation Logic | 2 days | Critical |
-| 5 | Save, Edit & Lock System | 2 days | Critical |
-| 6 | Calendar & History View | 2 days | High |
-| 7 | Export (Excel + PDF) | 2 days | High |
-| 8 | Monthly Report | 1 day | High |
-| 9 | PWA & Offline Support | 1 day | Medium |
-| 10 | UI Polish & Adani Theme | 2 days | Medium |
-| 11 | Testing & Bug Fixes | 3 days | Critical |
-| 12 | Deployment & Handoff | 1 day | Critical |
+| 1 | Dexie Local DB Setup | 1 day | Critical |
+| 2 | Authentication | 2 days | Critical |
+| 3 | Settings & Config | 2 days | Critical |
+| 4 | Shift Entry Grid (core) | 3 days | Critical |
+| 5 | Cash Party + Reconciliation | 1 day | Critical |
+| 6 | Carryover & Validation Logic | 2 days | Critical |
+| 7 | Save & Edit Flow (no locking) | 1 day | Critical |
+| 8 | Daily Sales Bar | 1 day | High |
+| 9 | Calendar Page | 2 days | High |
+| 10 | Supabase Sync Service | 2 days | High |
+| 11 | Export (Excel + PDF) | 2 days | High |
+| 12 | Monthly Report | 1 day | High |
+| 13 | PWA & Offline | 1 day | Medium |
+| 14 | UI Polish & Adani Theme | 2 days | Medium |
+| 15 | Testing & Bug Fixes | 3 days | Critical |
+| 16 | Deployment | 1 day | Critical |
 
-**Total Estimated: ~25 development days**
+**Total Estimated: ~28 development days**
 
 ---
 
 ## 3. Phase 0 — Project Setup & Configuration
 
 ### Tasks
-- [ ] Scaffold Vite + React project: `npm create vite@latest dsr-manager -- --template react`
-- [ ] Install all dependencies:
+- [ ] Scaffold Vite + React: `npm create vite@latest dsr-manager -- --template react`
+- [ ] Install dependencies:
 ```bash
-npm install firebase bcryptjs xlsx jspdf jspdf-autotable date-fns date-fns-tz react-router-dom react-hot-toast uuid
+npm install dexie @supabase/supabase-js bcryptjs react-router-dom react-hot-toast xlsx jspdf jspdf-autotable date-fns date-fns-tz uuid
 npm install -D tailwindcss postcss autoprefixer vite-plugin-pwa
 npx tailwindcss init -p
 ```
-- [ ] Configure `tailwind.config.js` with Adani color tokens (from UI/UX Brief Section 2)
-- [ ] Configure `vite.config.js` with PWA plugin (from TRD Section 15)
-- [ ] Set up folder structure (from TRD Section 2)
-- [ ] Create `.env` file and add to `.gitignore`
-- [ ] Initialize Firebase in `src/services/firebase.js`
-- [ ] Set up React Router in `App.jsx`
-- [ ] Configure global CSS (Inter font, base styles, Tailwind directives)
-- [ ] Create placeholder icons for PWA (192px + 512px)
+- [ ] Configure `tailwind.config.js` with Adani color tokens
+- [ ] Configure `vite.config.js` with PWA plugin
+- [ ] Set up folder structure as per TRD
+- [ ] Create `.env` with Supabase URL + anon key
+- [ ] Set up global CSS (Inter font import, Tailwind directives)
+- [ ] Create placeholder PWA icons (192 + 512px)
+- [ ] Set up React Router in `App.jsx` with all routes
 
 ### Deliverables
 - Blank app running on `localhost:5173`
-- Firebase connected (test with a manual Firestore write)
 - Tailwind working with Adani theme
+- Router working
 
 ---
 
-## 4. Phase 1 — Authentication
+## 4. Phase 1 — Dexie Local DB Setup
 
-### 4.1 Seed Script (run once before Phase 1)
+### Tasks
+- [ ] Create `src/db/localDB.js` with full Dexie schema (all tables from Backend Schema)
+- [ ] Create `src/db/supabaseClient.js`:
 ```javascript
-// scripts/seedOwner.js
-import { doc, setDoc } from 'firebase/firestore';
-import bcrypt from 'bcryptjs';
-import { db } from '../src/services/firebase.js';
+import { createClient } from '@supabase/supabase-js';
+import { db } from './localDB';
 
-const seedOwner = async () => {
-  const passwordHash = await bcrypt.hash('Adani@mem0510', 10);
-  await setDoc(doc(db, 'auth', 'owner'), {
-    username: 'Adani0510',
-    passwordHash,
-    securityQuestion: '',
-    securityAnswerHash: '',
-    isFirstLogin: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  console.log('Owner seeded successfully');
+export const getSupabaseClient = async () => {
+  const settings = await db.settings.get('main');
+  if (!settings?.supabaseUrl || !settings?.supabaseKey) return null;
+  return createClient(settings.supabaseUrl, settings.supabaseKey);
 };
-seedOwner();
 ```
-
-### 4.2 Tasks
-- [ ] Build `AuthContext.jsx` with session management (localStorage)
-- [ ] Build `authService.js`:
-  - `loginOwner(username, password)` → fetch `/auth/owner`, bcrypt compare
-  - `logoutOwner()` → clear localStorage
-  - `updatePassword(newPassword)` → hash + write to Firestore
-  - `updateSecurityQuestion(question, answer)` → hash answer + write
-  - `verifySecurityAnswer(answer)` → bcrypt compare
-- [ ] Build `LoginPage.jsx`:
-  - Username + password inputs
-  - Show/hide password toggle
-  - "Login" button with loading state
-  - "Forgot Password?" link
-  - Error toast on failure
-- [ ] Build `ForgotPassword.jsx`:
-  - Step 1: Enter username → verify
-  - Step 2: Show security question → enter answer → verify
-  - Step 3: Show username + password; option to set new password
-  - Password validation with rules display
-  - Redirect to login on completion
-- [ ] Build `SecuritySetup.jsx` (first login):
-  - Two inputs: question + answer
-  - "Save & Continue" button → write to Firestore → redirect to Settings
-  - "Skip for Now" button → redirect to Settings
-- [ ] Build `ProtectedRoute.jsx` — check localStorage session
-- [ ] Wire up session management in `sessions` Firestore collection
-- [ ] Second device read-only detection via `onSnapshot` on sessions
+- [ ] Write seed script (see Section 1.4 above)
+- [ ] Test Dexie CRUD: write a test record, read it back, delete it
+- [ ] Verify IndexedDB persists across browser refresh
 
 ### Deliverables
-- Login flow working end-to-end
-- Forgot password recovery working
-- First login security setup working
-- Protected routes blocking unauthenticated access
+- All Dexie tables created and verified
+- Supabase client initializes from settings table
 
 ---
 
-## 5. Phase 2 — Settings & Config
+## 5. Phase 2 — Authentication
+
+### Tasks
+- [ ] Build `AuthContext.jsx` with `isAuthenticated`, `isFirstLogin`, `logout`
+- [ ] Build `authService.js` (login, logout, updatePassword, updateSecurityQuestion, verifySecurityAnswer)
+- [ ] Build `ProtectedRoute.jsx` (checks localStorage session)
+- [ ] Build `LoginPage.jsx`:
+  - Username + password fields
+  - Show/hide toggle
+  - Error toast on failure
+  - "Forgot Password?" link
+- [ ] Build `ForgotPassword.jsx`:
+  - Step 1: enter username → verify in Dexie
+  - Step 2: show question → verify answer (bcrypt)
+  - Step 3: show credentials + set new password option
+  - Password rule validation display
+- [ ] Build `SecuritySetup.jsx` (first login mandatory setup)
+- [ ] Wire session to localStorage
+- [ ] Second device read-only detection (Dexie `sessions` or localStorage flag)
+
+### Deliverables
+- Login, logout, forgot password all working
+- First login security setup working
+- Protected routes block unauthenticated access
+
+---
+
+## 6. Phase 3 — Settings & Config
 
 ### Tasks
 - [ ] Build `settingsService.js`:
-  - `getSettings()` → read `/config/settings`, `/config/nozzles`, `/config/employees`
-  - `updateStationName(name)` → write to `/config/settings`
-  - `addNozzle(name)` → append to `/config/nozzles` list (validate max 15, no duplicate)
-  - `removeNozzle(id)` → set `isActive: false` on nozzle (soft delete)
-  - `addEmployee(name)` → append to `/config/employees` list (validate max 50)
-  - `removeEmployee(id)` → set `isActive: false` on employee
-- [ ] Build `SettingsContext.jsx` — global nozzle + employee state
-- [ ] Build `SettingsPage.jsx` with 4 sections:
-  - Station Name editor
-  - Nozzle Manager (`NozzleManager.jsx`): list + add + remove with confirmation
-  - Employee Manager (`EmployeeManager.jsx`): list + add + remove with confirmation
-  - Change Password form
-  - Security Question form
-- [ ] Warning popup when deleting a nozzle/employee in use in unsaved shift
+  - `getSettings()`, `updateStationName()`, `updateSupabaseConfig()`
+  - `addNozzle()`, `removeNozzle()` (soft delete, isActive: false)
+  - `addEmployee()`, `removeEmployee()`
+  - All write to Dexie + queue Supabase sync
+- [ ] Build `SettingsContext.jsx` — global nozzles + employees state
+- [ ] Build `NozzleManager.jsx` — list (X/15), add field, remove with confirmation
+- [ ] Build `EmployeeManager.jsx` — list (X/50), add field, remove with confirmation
+- [ ] Build `SupabaseConfig.jsx` — URL + key inputs + "Save & Test Connection" button
+- [ ] Build `SettingsPage.jsx` — compose all setting sections
+- [ ] Nozzle removal: check if in unsaved shift → show warning → greyed row
 
 ### Deliverables
-- Settings page fully functional
-- Nozzle + employee CRUD working
-- Password + security question update working
-- Global nozzle/employee state available to shift grid
+- All settings CRUD working
+- Supabase config testable from settings
+- Nozzle/employee add/remove working with warnings
 
 ---
 
-## 6. Phase 3 — Shift Entry Grid
+## 7. Phase 4 — Shift Entry Grid (Core)
 
-### 6.1 Tasks — Core Grid
-- [ ] Build `ShiftTabs.jsx` — SHIFT 1 / 2 / 3 tabs with status indicators
-- [ ] Build `PriceHeader.jsx` — Date display, Shift label, Today's Price input
-- [ ] Build `ShiftGrid.jsx` — wrapper for table with header row + data rows + total row
-- [ ] Build `ShiftRow.jsx` — single data entry row:
-  - Nozzle dropdown (from SettingsContext, filter already-selected nozzles)
-  - Employee dropdown (from SettingsContext, allow repeats)
-  - Opening Reading input (number only, auto-fill from carryover)
-  - Closing Reading input (number only)
-  - Difference field (read-only, auto-calc on blur)
-  - Sales field (read-only, auto-calc on blur)
-  - Cash input (number only, ≥ 0)
-  - CC input (number only, ≥ 0)
-  - UPI input (number only, ≥ 0)
-- [ ] Build `TotalRow.jsx` — auto-sum of all columns
-- [ ] Implement number-only input enforcement (prevent letters, only digits + decimal)
-- [ ] Implement Indian number format on display (Intl.NumberFormat en-IN)
-- [ ] Implement auto-fill visual indicator (grey italic for auto-filled opening)
-- [ ] Remove italic on manual edit of auto-filled field
-
-### 6.2 Tasks — Dropdown Behavior
-- [ ] Nozzle dropdown: show only active nozzles; grey-out inactive (deleted) ones
-- [ ] Nozzle dropdown: prevent selecting same nozzle twice in same shift
-- [ ] When new nozzle added in settings: immediately appear in open unsaved shift
-- [ ] When nozzle/employee deleted: greyed-out in row until shift saved
-
-### 6.3 Tasks — Calculation Engine
-- [ ] `calculations.js`: `calcDifference()`, `calcSales()`, `calcRowTotals()`
-- [ ] Trigger calculations `onBlur` of Closing Reading (not on every keystroke)
-- [ ] Trigger recalculate totals whenever any row's values change
+### Tasks
+- [ ] Build `PriceHeader.jsx` — Date display, Shift label, Today's Price input (editable inline)
+- [ ] Build `SearchDropdown.jsx` (reusable):
+  - Search text input at top
+  - Filtered option list
+  - Greyed-out disabled options (used nozzles, inactive items)
+  - Keyboard navigable
+- [ ] Build `ShiftRow.jsx`:
+  - Nozzle dropdown (with search; deduplication)
+  - Employee dropdown (with search; repeats allowed)
+  - Opening Reading (number only, grey italic if auto-filled)
+  - Closing Reading (number only)
+  - Difference (read-only, auto-calc on blur)
+  - Sales (read-only, auto-calc on blur)
+  - Cash, CC, UPI, Cash Party (number only, ≥ 0)
+  - Tab navigation: Nozzle → Employee → Opening → Closing → Cash → CC → UPI → CashParty → next row
+- [ ] Block letter input in all number fields (keydown event handler)
+- [ ] Right-align all number values in cells
+- [ ] Apply Indian number format (Intl.NumberFormat en-IN) to display values
+- [ ] Build `TotalRow.jsx` — auto-sum all columns, updates on every row change
+- [ ] Build `ShiftGrid.jsx` — wraps header row + ShiftRow × N + TotalRow
+- [ ] Build `AuditTrail.jsx` — "Last saved: DD/MM/YYYY HH:MM" grey text below tabs
+- [ ] Build `ShiftTabs.jsx` — SHIFT 1/2/3 tabs with saved status dots
+- [ ] Render only configured nozzle rows (not all 15 slots)
 
 ### Deliverables
-- Fully functional shift data entry grid
-- Dropdowns working with deduplication
-- Auto-calculations working on blur
+- Full shift grid renders with all 10 columns
+- Dropdowns with search working
+- Tab key navigation working
+- Auto-calculations on blur working
 - Total row auto-updating
 
 ---
 
-## 7. Phase 4 — Carryover & Validation Logic
+## 8. Phase 5 — Cash Party + Reconciliation
 
-### Tasks — Carryover
+### Tasks
+- [ ] Add `cashParty` field to all row schemas and total calculations
+- [ ] Update `calculations.js` — include cashParty in totals
+- [ ] Update `validators.js` — reconciliation: Cash + CC + UPI + CashParty = Sales
+- [ ] Show per-row inline error indicator (red left border + `#FEF2F2` bg) when reconciliation fails
+- [ ] Block save with popup listing all failing rows with their calculated vs expected values
+- [ ] Include Cash Party in Total Row sum
+- [ ] Include Cash Party in Daily Sales Bar
+
+### Deliverables
+- Cash Party column fully functional
+- Reconciliation with 4 payment types working
+- Validation blocks save on mismatch
+
+---
+
+## 9. Phase 6 — Carryover & Validation
+
+### Tasks
 - [ ] Build `useCarryover.js` hook:
-  - `getShiftCarryover(date, shiftNum)` → fetch previous shift/day's closing readings
-  - `applyCarryover(rows, carryoverData)` → apply by row position index
-- [ ] Day boundary carryover (Shift 3 → next day Shift 1):
-  - On opening new date: check if previous day's Shift 3 exists
-  - If not: show redirect popup (from `APP_FLOW.md` Section 3.2)
-  - If yes: auto-fill Shift 1 opening readings
-- [ ] Auto-fill Today's Price from previous shift/day price
-- [ ] First-ever entry (no carryover exists): leave opening readings blank, price `₹0.00`
-
-### Tasks — Validation
-- [ ] Build `validators.js`:
-  - `validateRow(row)` → all per-row rules
-  - `validateShift(shift)` → price check + all row validation
-  - `validatePassword(password)` → regex check
-- [ ] Inline error display on individual inputs (red border + error text below)
-- [ ] Reconciliation check (Cash + CC + UPI = Sales per row) → block save with popup
-- [ ] Validation popup design: list errors by row number and field name
-- [ ] Today's Price = 0 → toast error on save attempt
+  - `getCarryoverForShift(date, shiftNum)` → fetch previous shift data from Dexie
+  - `applyCarryover(rows, prevShiftRows)` → map by row index
+  - `cascadeCarryover(date, shiftNum, savedRows)` → update next shift + queue sync
+- [ ] Day-boundary carryover: check previous day Shift 3 on new date open
+- [ ] Missing Shift 3 popup: redirect button to previous day
+- [ ] Auto-fill Today's Price from previous shift/day (fallback to `0.00`)
+- [ ] Auto-fill visual: grey italic on opening; removed on manual edit
+- [ ] Cascade warning: generic popup before saving if next shift already has data
+- [ ] Build all validation rules in `validators.js`
+- [ ] Inline error display: red border + error text below field
 
 ### Deliverables
-- Carryover logic fully working between shifts and days
+- Carryover fully working between shifts and across day boundary
+- Auto-fill italic indicator working
+- Cascade warning showing before save
 - All validation rules enforced
-- Redirect popup for missing Shift 3 working
 
 ---
 
-## 8. Phase 5 — Save, Edit & Lock System
+## 10. Phase 7 — Save & Edit Flow
 
 ### Tasks
-- [ ] Build `shiftService.js`:
-  - `saveShift(date, shiftNum, shiftData)` → batch write to Firestore
-  - `updateShift(date, shiftNum, shiftData)` → update + reset edit expiry
-  - `getShift(date, shiftNum)` → getDoc from Firestore
-  - `lockCheck(shift)` → compare editWindowExpiry with current IST time
-  - `forceUpdateCarryover(date, shiftNum, closingRows)` → update next shift's openings
-- [ ] Save button behavior:
-  - Run validation → on pass → batch write shift + update date doc + update calendar metadata
-  - Show success toast: "Shift [N] saved successfully"
-  - Calculate and store `editWindowExpiry = savedAt + 48 hours`
-- [ ] Post-save carryover update:
-  - Update next shift's opening readings in Firestore
-  - Show banner on current shift if next shift was already saved
-- [ ] Edit button behavior:
-  - Check `editWindowExpiry > now` → show Edit button
-  - On click: unlock all inputs in shift
-- [ ] Lock state rendering:
-  - `isLocked = true` → all inputs disabled, grey styling, no Edit/Save buttons
-  - `isSaved + within 48hr` → read-only + Edit button visible
-  - `never saved` → fully editable
-- [ ] `useShiftData.js` hook managing shift state + load + save
+- [ ] Build `shiftService.js`: `saveShift()`, `getShift()`, `getAllShiftsForDate()`
+- [ ] Save button per shift:
+  - Run `validateShift()` first
+  - If next shift has saved data → show cascade warning popup
+  - Write to Dexie → queue Supabase sync
+  - Update `lastEditedAt`
+  - Show audit trail update
+  - Call `cascadeCarryover()`
+  - Update Daily Sales Bar
+  - Show success toast
+- [ ] No locking: any saved shift always shows Save button
+- [ ] Re-editing: all fields always editable; no Edit button needed
 
 ### Deliverables
-- Complete save flow with batch Firestore writes
-- 48-hour edit window working
-- Lock after expiry working
-- Carryover auto-update after save working
+- Save flow working end-to-end
+- Any past shift editable at any time
+- Cascade carryover triggers on every save
 
 ---
 
-## 9. Phase 6 — Calendar & History View
+## 11. Phase 8 — Daily Sales Bar
 
 ### Tasks
-- [ ] Build `DatePicker.jsx` (custom calendar component):
-  - Display current month
+- [ ] Build `DailySalesBar.jsx`:
+  - Highlighted card below shift grid
+  - "DAILY TOTAL" label (navy bold)
+  - Shows: Diff (KG) | Sales (₹) | Cash | CC | UPI | Cash Party
+  - Indian number format
+  - Light navy tint background (`#EFF6FF`)
+- [ ] Build `useDailyTotals.js` hook:
+  - Subscribes to current date's shifts in Dexie state
+  - Recomputes on every shift save
+  - Shows partial totals from whatever shifts are filled
+- [ ] Smooth number transition animation on value change
+
+### Deliverables
+- Daily Sales Bar always visible regardless of shift tab
+- Updates in real-time after each shift save
+- Partial totals shown correctly
+
+---
+
+## 12. Phase 9 — Calendar Page
+
+### Tasks
+- [ ] Build `CalendarPage.jsx`:
+  - Month grid (Mon–Sun headers)
   - Month navigation (prev/next arrows)
-  - Today's date: red circle highlight
-  - Dates with data: red dot indicator (from `/metadata/calendar`)
+  - Today: Adani Red circle
+  - Dates with data: small red dot below date number (from Dexie calendar table)
   - Past 60 days: selectable
-  - Future + older than 60 days: disabled
-- [ ] Fetch `/metadata/calendar` on dashboard load (1 read for all date indicators)
-- [ ] Date selection handler:
-  - If past date → read-only mode → load history
-  - If today → normal write mode
-- [ ] Build `HistoryPage.jsx` (or integrate into Dashboard with read-only flag):
-  - All inputs disabled
-  - "Read-Only" badge on shift tabs
-  - Grey italic auto-fill indicators still shown
-  - Greyed-out deleted nozzles/employees shown
-  - Opens on last saved shift tab
-- [ ] Data cleanup on login: `cleanupService.js` → delete records older than 60 days
+  - Future + older than 60 days: gray, disabled
+  - Click date → navigate to `/dashboard/:date`
+- [ ] Build `MonthlySummary.jsx`:
+  - Appears at bottom of Calendar page
+  - Updates as owner navigates months
+  - Aggregates all shifts for displayed month from Dexie
+  - Shows: Diff (KG) | Sales (₹) | Cash | CC | UPI | Cash Party
+- [ ] Wire Calendar link in hamburger menu
+- [ ] Remove any date picker from Dashboard (Calendar is now the navigation)
 
 ### Deliverables
-- Calendar fully working with date indicators
-- History view working in read-only mode
-- Auto-cleanup of 60+ day records on login
+- Full calendar page with dot indicators
+- Monthly summary updates on month navigation
+- Clicking dates navigates to correct dashboard view
 
 ---
 
-## 10. Phase 7 — Export (Excel & PDF)
+## 13. Phase 10 — Supabase Sync Service
 
-### Tasks — DSR Excel Export
-- [ ] Build `ExportDSR.jsx` modal/page (accessible from hamburger menu)
-- [ ] Date picker for selecting which day to export
-- [ ] Check: all 3 shifts fully filled → if not, show popup with incomplete shift list
-- [ ] Build `exportService.js` → `exportDSR(date, shifts, stationName)`:
-  - Use SheetJS to create workbook
-  - 3 tabs: SHIFT1, SHIFT2, SHIFT3
-  - Each tab: station name header, date, column headers, row data, grand total row
-  - Apply Indian number formatting in cells
-  - Trigger browser download: `DDMMYYYY_DSR.xlsx`
+### Tasks
+- [ ] Build `syncService.js` (from TRD Section 5):
+  - `startSync()`, `stopSync()`, `runSync()`
+  - Push: iterate syncQueue → upsert to Supabase → mark as done
+  - Pull: fetch changes newer than `lastPullAt` → write to Dexie
+  - 30-second interval when online
+- [ ] Build `SyncContext.jsx` — syncStatus state (`synced/syncing/offline/error`)
+- [ ] Build `SyncIndicator.jsx` — colored dot + text in header top-left
+- [ ] Wire `useOnlineStatus.js` to start/stop sync
+- [ ] Auto-create Supabase tables on first successful sync:
+  - Run `CREATE TABLE IF NOT EXISTS` SQL statements
+- [ ] Handle Supabase not configured (no URL/key): skip sync, no errors
+- [ ] Handle sync errors gracefully: retry on next interval
 
-### Tasks — Monthly PDF Export
-- [ ] Build `MonthlyReport.jsx` popup modal
-- [ ] Dropdown list of available completed months (within 60 days)
-- [ ] Fetch all date records for selected month → sum shift totals per day
-- [ ] Display on-screen table with per-day rows + grand total row
-- [ ] "Export PDF" button → `exportMonthlyPDF()`:
-  - Use jsPDF + autoTable
+### Deliverables
+- Auto-sync every 30 seconds when online
+- Sync indicator showing live status
+- Offline → online triggers immediate sync
+- Supabase tables auto-created on first sync
+
+---
+
+## 14. Phase 11 — Export (Excel + PDF)
+
+### Tasks — DSR Excel
+- [ ] Build `ExportDSR.jsx`:
+  - Date picker modal
+  - Check all 3 shifts complete (all rows filled)
+  - If not: popup listing which shifts are incomplete
+- [ ] Build `exportService.js → exportDSR()`:
+  - SheetJS workbook with 3 tabs (SHIFT1, SHIFT2, SHIFT3)
+  - Each tab: station name, date, 10 columns including Cash Party, grand total row
+  - Filename: `DDMMYYYY_DSR.xlsx`
+
+### Tasks — Monthly PDF
+- [ ] Build `MonthlyReport.jsx` modal:
+  - Dropdown of complete months
+  - On-screen table with all columns + Cash Party + grand total
+- [ ] `exportService.js → exportMonthlyPDF()`:
+  - jsPDF landscape + autoTable
   - Station name header
-  - Month/year title
-  - Table: Date | Diff KG | Sales ₹ | Cash | CC | UPI
-  - Grand total row
-  - Trigger browser download: `MonthName_DSR.pdf`
+  - Filename: `MonthName_DSR.pdf`
 
 ### Deliverables
-- DSR Excel export working with 3 tabs
-- Export blocked if shifts incomplete (with explanatory popup)
-- Monthly report on-screen table working
-- Monthly PDF export working
+- DSR export with Cash Party working
+- Export blocked if shifts incomplete
+- Monthly PDF with Cash Party working
 
 ---
 
-## 11. Phase 8 — Monthly Report
+## 15. Phase 12 — Monthly Report
 
 ### Tasks
-- [ ] Determine "complete month" logic: every calendar day in month has all 3 shifts saved
-- [ ] Build dropdown population: query records for each month within 60 days, validate completeness
-- [ ] Grand total row calculation across all days of month
-- [ ] Responsive popup modal with scrollable table for months with many days
+- [ ] Complete month validation: every day in the calendar month has all 3 shifts saved
+- [ ] Dropdown populates only qualifying months within 60-day window
+- [ ] Grand total row at bottom of on-screen table
+- [ ] Month navigation updates on-screen table + summary
 
 ### Deliverables
-- Monthly report dropdown shows only fully complete months
-- On-screen table with correct per-day data and grand totals
-- PDF export clean and correctly formatted
+- Only fully complete months in dropdown
+- On-screen and PDF monthly reports correct
 
 ---
 
-## 12. Phase 9 — PWA & Offline Support
+## 16. Phase 13 — PWA & Offline
 
 ### Tasks
-- [ ] Configure `vite-plugin-pwa` (from TRD Section 15):
-  - `registerType: 'autoUpdate'` (silent updates)
-  - Workbox caching for app shell + Firestore API calls
-- [ ] Create PWA icons (192px, 512px) — navy blue square with "DSR" white text
-- [ ] Build `useOnlineStatus.js` hook (from TRD Section 17)
-- [ ] Build offline banner component:
-  - Top of screen, amber/red background
-  - "No Internet Connection — Read-Only Mode"
-  - Dismiss when online
-- [ ] When offline:
-  - All Save/Edit/Export buttons disabled
-  - All inputs disabled
-  - Cached data from IndexedDB still shown
-- [ ] Test PWA install prompt on Chrome desktop
-- [ ] Install prompt banner (dismissible, after 30 seconds)
+- [ ] Configure `vite-plugin-pwa` (auto-update, Workbox caching)
+- [ ] PWA manifest: name "DSR Manager", navy theme, icons
+- [ ] Verify IndexedDB preserved when PWA installed (test by clearing browser cache while PWA installed)
+- [ ] Install prompt banner (30 seconds after first visit)
+- [ ] Test offline mode: disconnect → all data entry works → reconnect → sync
 
 ### Deliverables
-- App installable as desktop PWA
-- Offline mode working with cached data
+- Installable as desktop PWA
+- Full offline data entry working via Dexie
 - Auto-update on new deployment
 
 ---
 
-## 13. Phase 10 — UI Polish & Adani Theme
+## 17. Phase 14 — UI Polish & Adani Theme
 
 ### Tasks
-- [ ] Apply full Adani theme across all components (from UI/UX Brief)
-- [ ] Header: navy bg, white text, hamburger icon
-- [ ] Side drawer: slide-in from right, dark navy bg, white menu items
-- [ ] Shift tabs: proper active/inactive/saved/locked states
-- [ ] Data grid: correct column widths, row heights, alternating row colors
-- [ ] Total row: bold, light navy tint background
-- [ ] Error states: red borders, pink row backgrounds
-- [ ] Auto-fill grey italic on opening readings
-- [ ] Toast notifications: top-right, 4 color variants
-- [ ] Inline banners: amber for carryover update notices
-- [ ] All buttons: correct states (default, hover, active, disabled)
-- [ ] Modals: backdrop, fade+scale animation
-- [ ] Empty states: friendly messages for empty data
-- [ ] Login page: navy background, white card, clean minimal design
-- [ ] PWA install prompt banner styling
+- [ ] Apply full Adani color palette across all components
+- [ ] Header: navy, sync indicator top-left, hamburger top-right
+- [ ] Side drawer: dark navy, slide animation
+- [ ] Shift tabs: correct active/inactive/saved states, audit trail below
+- [ ] Data grid: column widths, row heights (50px), alternating colors, hover states
+- [ ] Error rows: red left border + pink tint
+- [ ] Daily Sales Bar: blue tint card, bold label
+- [ ] All buttons: correct states (default/hover/active/disabled)
+- [ ] Search dropdowns: clean filter UI
+- [ ] Toast notifications: 4 color variants, top-right
+- [ ] Calendar page: red dot indicators, navy today highlight
+- [ ] Login page: navy bg, white card, centered
+- [ ] Empty state messages: friendly, helpful text
+- [ ] All microinteractions: drawer slide, modal fade, toast slide, sync pulse
+- [ ] Inter font applied throughout
 
 ### Deliverables
 - Full Adani-themed professional UI
-- All states (error, success, warning, disabled) visually distinct
-- Consistent typography (Inter font) throughout
+- All states visually distinct
+- Consistent design system throughout
 
 ---
 
-## 14. Phase 11 — Testing & Bug Fixes
+## 18. Phase 15 — Testing & Bug Fixes
 
-### 14.1 Manual Test Scenarios
+### Manual Test Scenarios
 
-#### Authentication
-- [ ] Login with correct credentials → dashboard
-- [ ] Login with wrong password → error toast
-- [ ] Login with wrong username → error toast
-- [ ] Forgot password with correct answer → see credentials + change password
-- [ ] Forgot password with wrong answer → error
-- [ ] Change password (valid + invalid formats)
-- [ ] First login → security setup prompt
+**Authentication**
+- [ ] Login correct credentials → dashboard
+- [ ] Login wrong password → error toast
+- [ ] Forgot password flow end-to-end
+- [ ] First login → security setup → settings
+- [ ] Change password (valid rules + invalid rules)
 
-#### Shift Entry
-- [ ] Fill all 10 rows correctly → save → success
-- [ ] Leave employee empty → block save with error
-- [ ] Enter Closing < Opening → block save with error
-- [ ] Enter Cash + CC + UPI ≠ Sales (per row) → block with popup
-- [ ] Enter Opening = 0 → block save
-- [ ] Enter Today's Price = 0 → block save
-- [ ] Auto-fill verification: Shift 1 closing → Shift 2 opening (correct row positions)
-- [ ] Auto-fill italic display → manually edit → italic removed
-- [ ] Indian number format displays correctly on all calculated fields
+**Shift Entry**
+- [ ] Fill all rows correctly → save
+- [ ] Tab through all cells in correct order (skip Diff + Sales)
+- [ ] Leave employee empty → block save
+- [ ] Closing < Opening → block save
+- [ ] Cash + CC + UPI + CashParty ≠ Sales → popup with row numbers
+- [ ] Cash Party zero + others correct → saves fine
+- [ ] Today's Price = 0 → block save
 
-#### Carryover
-- [ ] Open new date with previous day Shift 3 filled → Shift 1 auto-fills
-- [ ] Open new date with previous day Shift 3 NOT filled → redirect popup
-- [ ] Shift 2 auto-fills from Shift 1 (after Shift 1 saved)
-- [ ] Edit Shift 1 within 48hr → Shift 2 opening updates + banner shown
-- [ ] Edit Shift 1 → Shift 2 already locked → still force-updates + banner
+**Carryover**
+- [ ] Shift 1 save → Shift 2 opening auto-fills (grey italic)
+- [ ] Shift 2 save → Shift 3 opening auto-fills
+- [ ] Shift 3 save → next day Shift 1 opening auto-fills
+- [ ] Edit Shift 1 → cascade warning → confirm → Shift 2 opening updates
+- [ ] New date without previous day Shift 3 → redirect popup
 
-#### Settings
-- [ ] Add nozzle → appears immediately in open unsaved shift
-- [ ] Remove nozzle in use in unsaved shift → warning → greyed row
-- [ ] Deleted nozzle shows greyed in history view
-- [ ] Add employee up to 50 → 51st blocked
-- [ ] Add nozzle up to 15 → 16th blocked
+**Daily Sales Bar**
+- [ ] Shows partial totals after Shift 1 saved
+- [ ] Updates after Shift 2 saved
+- [ ] Correct grand total after all 3 shifts saved
+- [ ] Visible regardless of which shift tab is active
 
-#### Calendar & History
-- [ ] Saved dates show red dot on calendar
+**Calendar Page**
+- [ ] Red dots on dates with saved data
+- [ ] Today highlighted in navy/red
 - [ ] Future dates not selectable
-- [ ] Dates beyond 60 days not selectable
-- [ ] History view is read-only (all inputs disabled)
-- [ ] History opens on last saved shift tab
+- [ ] 60+ day old dates not selectable
+- [ ] Click date → navigates to correct dashboard view
+- [ ] Monthly summary updates on month navigation
+- [ ] Monthly summary shows partial data for current month
 
-#### Export
-- [ ] DSR export: all 3 shifts filled → Excel downloads correctly
-- [ ] DSR export: Shift 2 missing → popup lists Shift 2 as incomplete
-- [ ] Monthly report: only fully complete months appear in dropdown
-- [ ] Monthly PDF exports correctly with station name + totals
+**Settings**
+- [ ] Add nozzle → appears immediately in open shift
+- [ ] Remove nozzle in use → warning → greyed row
+- [ ] Deleted nozzle shows greyed in history
+- [ ] Add employee past 50 → blocked
+- [ ] Add nozzle past 15 → blocked
+- [ ] Supabase config → test connection → success/fail
 
-#### PWA & Offline
-- [ ] App installs on Chrome desktop
-- [ ] Disconnect internet → offline banner appears → all writes blocked
-- [ ] Reconnect → banner disappears → writes enabled
+**Sync**
+- [ ] Go offline → sync indicator shows "Offline — Local Only"
+- [ ] Save offline → data in Dexie → reconnect → syncs to Supabase
+- [ ] Clear browser cache while PWA installed → data still present (IndexedDB preserved)
+- [ ] Sync indicator: Syncing (amber pulse) → Synced (green)
 
-### 14.2 Edge Cases to Test
-- [ ] First-ever Day 1 Shift 1 entry (no previous carryover)
-- [ ] Skipped shift (closing = opening, rest = 0) → next shift still carries over correctly
+**Export**
+- [ ] DSR: all 3 shifts filled → Excel downloads with 3 tabs + Cash Party
+- [ ] DSR: Shift 2 missing → popup lists Shift 2 as incomplete
+- [ ] Monthly: only complete months in dropdown
+- [ ] Monthly PDF downloads with Cash Party column
+
+### Edge Cases
+- [ ] First-ever Day 1 Shift 1 (no carryover, no price history)
+- [ ] Skipped shift (closing = opening, all payments = 0) → carryover still works
 - [ ] Same employee in multiple rows of same shift
-- [ ] 60-day cleanup runs correctly and removes old records
-- [ ] Edit window: saved June 9 → editable until June 11 11:59 PM IST → locked June 12 00:00
-- [ ] Second device read-only mode
+- [ ] Edit very old shift → cascade warning → carryover updates correctly
+- [ ] 60-day cleanup runs on login → old records gone from both Dexie + Supabase queue
 
 ---
 
-## 15. Phase 12 — Deployment
+## 19. Phase 16 — Deployment
 
 ### Tasks
-- [ ] Set all environment variables in Vercel dashboard
-- [ ] Deploy to Vercel:
-```bash
-cd dsr-manager
-vercel --prod
-```
-- [ ] Verify app loads at `dsr-manager.vercel.app` (or chosen name)
-- [ ] Test Firebase connection in production
-- [ ] Test PWA install in production
-- [ ] Run seed script against production Firestore (create owner document)
-- [ ] Verify Firestore security rules are deployed
-- [ ] Verify composite indexes are built in Firestore console
-- [ ] Final end-to-end test on production URL
-
-### Deliverables
-- Live app accessible at Vercel URL
-- All features working in production
-- Owner can log in with `Adani0510 / Adani@mem0510`
+- [ ] Set env vars in Vercel dashboard (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`)
+- [ ] Deploy: `vercel --prod`
+- [ ] Verify app at vercel.app URL
+- [ ] Test Supabase sync in production
+- [ ] Run seed script in production (create owner in Dexie on first open)
+- [ ] Test PWA install on Chrome desktop
+- [ ] Full end-to-end test on production
 
 ---
 
-## 16. File-by-File Build Order
-
-Build in this exact order to minimize re-work and dependency issues:
+## 20. File-by-File Build Order (40 files)
 
 ```
-1. src/services/firebase.js
-2. src/utils/constants.js
-3. src/utils/formatters.js
-4. src/utils/calculations.js
-5. src/utils/validators.js
-6. src/utils/dateUtils.js
-7. src/services/authService.js
-8. src/context/AuthContext.jsx
-9. src/components/auth/LoginForm.jsx
-10. src/components/auth/ForgotPassword.jsx
-11. src/components/auth/SecuritySetup.jsx
-12. src/pages/LoginPage.jsx
-13. src/services/settingsService.js
-14. src/context/SettingsContext.jsx
-15. src/components/settings/NozzleManager.jsx
-16. src/components/settings/EmployeeManager.jsx
-17. src/components/settings/SettingsPage.jsx
-18. src/pages/SettingsPage.jsx
-19. src/hooks/useOnlineStatus.js
-20. src/hooks/useCarryover.js
-21. src/services/shiftService.js
-22. src/hooks/useShiftData.js
-23. src/components/shift/PriceHeader.jsx
-24. src/components/shift/ShiftRow.jsx
-25. src/components/shift/TotalRow.jsx
-26. src/components/shift/ShiftGrid.jsx
-27. src/components/shift/ShiftTabs.jsx
-28. src/components/calendar/DatePicker.jsx
-29. src/services/cleanupService.js
-30. src/pages/DashboardPage.jsx
-31. src/pages/HistoryPage.jsx
-32. src/services/exportService.js
-33. src/components/export/ExportDSR.jsx
-34. src/components/export/MonthlyReport.jsx
-35. src/components/layout/SideDrawer.jsx
-36. src/components/layout/Header.jsx
-37. src/components/layout/ToastContainer.jsx
-38. src/components/ui/* (Button, Input, Dropdown, Modal, Toast, Badge)
-39. src/App.jsx (wire all routes)
-40. vite.config.js (add PWA plugin)
-41. public/manifest.json + icons
+1.  src/db/localDB.js
+2.  src/db/supabaseClient.js
+3.  src/utils/constants.js
+4.  src/utils/formatters.js
+5.  src/utils/calculations.js
+6.  src/utils/validators.js
+7.  src/utils/dateUtils.js
+8.  src/services/authService.js
+9.  src/context/AuthContext.jsx
+10. src/context/SyncContext.jsx
+11. src/hooks/useOnlineStatus.js
+12. src/services/syncService.js
+13. src/services/cleanupService.js
+14. src/services/settingsService.js
+15. src/context/SettingsContext.jsx
+16. src/services/shiftService.js
+17. src/hooks/useCarryover.js
+18. src/hooks/useDailyTotals.js
+19. src/hooks/useShiftData.js
+20. src/components/ui/Button.jsx
+21. src/components/ui/Input.jsx
+22. src/components/ui/SearchDropdown.jsx
+23. src/components/ui/Modal.jsx
+24. src/components/ui/Toast.jsx
+25. src/components/ui/WarningPopup.jsx
+26. src/components/auth/LoginForm.jsx
+27. src/components/auth/ForgotPassword.jsx
+28. src/components/auth/SecuritySetup.jsx
+29. src/components/layout/SyncIndicator.jsx
+30. src/components/layout/Header.jsx
+31. src/components/layout/SideDrawer.jsx
+32. src/components/layout/ToastContainer.jsx
+33. src/components/shift/AuditTrail.jsx
+34. src/components/shift/PriceHeader.jsx
+35. src/components/shift/ShiftRow.jsx
+36. src/components/shift/TotalRow.jsx
+37. src/components/shift/DailySalesBar.jsx
+38. src/components/shift/ShiftGrid.jsx
+39. src/components/shift/ShiftTabs.jsx
+40. src/components/calendar/MonthlySummary.jsx
+41. src/components/calendar/CalendarPage.jsx
+42. src/components/settings/NozzleManager.jsx
+43. src/components/settings/EmployeeManager.jsx
+44. src/components/settings/SupabaseConfig.jsx
+45. src/components/settings/SettingsPage.jsx
+46. src/services/exportService.js
+47. src/components/export/ExportDSR.jsx
+48. src/components/export/MonthlyReport.jsx
+49. src/pages/LoginPage.jsx
+50. src/pages/DashboardPage.jsx
+51. src/pages/CalendarPage.jsx
+52. src/pages/SettingsPage.jsx
+53. src/App.jsx
+54. vite.config.js (PWA plugin)
+55. public/manifest.json + icons
 ```
 
 ---
 
-## 17. Known Risks & Mitigations
+## 21. Known Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| Firebase free tier exceeded | App stops writing data | Optimize reads (see TRD Section 10); monitor usage in Firebase console |
-| Firestore offline persistence conflicts | Stale data shown | Clear IndexedDB cache on version update; show "syncing" state |
-| Custom auth weaker than Firebase Auth | Security risk | Acceptable for single-user v1; migrate to Firebase Auth in v2 |
-| bcryptjs slow on old hardware | Login takes 2-3 seconds | Use cost factor 10 (acceptable); add loading spinner |
-| Excel column widths incorrect | Poor export readability | Test SheetJS column width settings; manually set `wscols` |
-| Monthly report Firestore reads spike | Free tier read limit | Month = max 30 days × 3 shifts = 90 reads; well within limits |
-| PWA cache serving stale version | Owner uses outdated UI | `registerType: 'autoUpdate'` forces silent update on next visit |
+| IndexedDB cleared despite PWA | Data loss | Supabase cloud sync as backup; pull on every login |
+| Supabase free tier limit (500MB) | Sync fails | 60-day cleanup keeps data small; ~2MB/month estimated |
+| Supabase not configured by owner | No cloud sync | App works fully offline; warn in settings if not configured |
+| bcryptjs slow on weak hardware | Login delay 2-3s | Add loading spinner; use cost factor 10 |
+| SheetJS column widths off | Poor export | Set `wscols` manually in export service |
+| Sync conflict (unlikely, single device) | Data mismatch | Last-write-wins policy; acceptable for single user |
+| Large syncQueue builds up offline | Sync takes time after reconnect | Process queue in batches of 10; show sync progress |
 
 ---
 
-## 18. Post-Launch Maintenance
-
-| Task | Frequency | Action |
-|------|-----------|--------|
-| Monitor Firestore usage | Weekly | Firebase Console → Usage tab |
-| Check Vercel deployment logs | On issues | Vercel Dashboard → Functions tab |
-| Firestore security rules review | v2 upgrade | Migrate to Firebase Auth |
-| Backup critical data | Monthly | Owner exports monthly PDFs |
-| Update dependencies | Quarterly | `npm audit fix`; test before deploying |
-
----
-
-## 19. V2 Roadmap (Future Enhancements)
-
-Features explicitly excluded from v1 but designed for in the architecture:
+## 22. V2 Roadmap
 
 | Feature | Notes |
 |---------|-------|
-| Multi-user / Multi-station | Each user has own Firestore path (`/stations/{stationId}/records/...`) |
-| Firebase Auth migration | Replace custom auth with proper Firebase Auth |
-| Email verification on registration | Firebase Auth supports this natively |
-| Role-based access (Admin + Staff) | Context-level permission checks |
-| Mobile-responsive UI | Add Tailwind breakpoints for tablet/mobile |
-| Weekly summary report | Aggregate 7-day data; same pattern as monthly |
-| Automated daily email report | Firebase Cloud Functions + SendGrid |
-| Fuel price API integration | Auto-fetch daily CNG price from government API |
-| Audit log | Track all edits with timestamp and old/new values |
-| Data export (full CSV dump) | Export all 60 days at once |
+| Multi-user / Multi-station | Supabase Row Level Security per station; separate data namespaces |
+| Self-registration with email verification | Supabase Auth + email templates |
+| Role-based access (Admin + Staff) | RLS policies; Context-level permission checks |
+| Mobile-responsive UI | Tailwind breakpoints for tablet/mobile |
+| Weekly summary report | Same pattern as monthly report |
+| Automated email reports | Supabase Edge Functions + Resend/SendGrid |
+| CNG price API | Auto-fetch daily price from government data source |
+| Audit log | Track all field changes with old/new values + timestamps |
+| Multi-device real-time sync | Supabase Realtime subscriptions |
+| Full data export | Export all 60 days as single ZIP archive |

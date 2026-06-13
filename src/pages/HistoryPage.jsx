@@ -11,6 +11,7 @@ import { getShift } from '../services/shiftService';
 import { isEditable } from '../utils/dateUtils';
 import { formatDisplayDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 const HistoryPage = () => {
   const { date } = useParams();
@@ -78,7 +79,7 @@ const HistoryPage = () => {
 
         {loading ? (
           <div className="flex items-center justify-center py-20 bg-white rounded-b-lg shadow-card">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-adani-navy" />
+            <LoadingSpinner size="lg" label="Loading history" />
           </div>
         ) : shiftData[`shift${activeShift}`] ? (
           <ShiftGrid

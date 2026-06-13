@@ -77,9 +77,10 @@ const recalculate = (rows, price) => {
     const sales = parseFloat((diff * p).toFixed(2));
     const cc = parseFloat(row.cc) || 0;
     const upi = parseFloat(row.upi) || 0;
+    const cashParty = parseFloat(row.cashParty) || 0;
     const cash = row.hasNotes
       ? (parseFloat(row.cash) || 0)
-      : Math.max(0, parseFloat((sales - cc - upi).toFixed(2)));
+      : Math.max(0, parseFloat((sales - cc - upi - cashParty).toFixed(2)));
     return { ...row, difference: diff, salesRs: sales, cash };
   });
 

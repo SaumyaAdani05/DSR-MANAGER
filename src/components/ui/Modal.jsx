@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 
 /**
- * Reusable Modal / Popup with backdrop, close-on-outside-click, and Escape key support.
+ * Reusable Modal / Popup with backdrop blur, close-on-outside-click, and Escape key.
  *
  * @param {boolean}  isOpen   - Whether the modal is visible
  * @param {Function} onClose  - Callback to close the modal
@@ -53,21 +53,21 @@ export default function Modal({
       aria-modal="true"
       aria-label={title}
       onClick={handleBackdropClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[3px] p-4 animate-fade-in"
     >
       <div
         style={{ maxWidth }}
-        className="relative w-full rounded-xl bg-white p-8 shadow-card animate-modal-in"
+        className="relative w-full rounded-2xl bg-white p-8 shadow-xl animate-modal-in ring-1 ring-black/5"
       >
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-adani-navy">{title}</h2>
+          <h2 className="text-lg font-bold text-adani-navy tracking-tight">{title}</h2>
 
           <button
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-adani-gray transition-colors hover:bg-adani-lightGray hover:text-adani-navy focus:outline-none focus:ring-2 focus:ring-adani-navy/40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-adani-gray transition-all duration-150 hover:bg-adani-lightGray hover:text-adani-navy focus:outline-none focus:ring-2 focus:ring-adani-navy/40 active:scale-90"
           >
             <svg
               className="h-5 w-5"

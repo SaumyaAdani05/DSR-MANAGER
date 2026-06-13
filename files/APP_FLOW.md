@@ -1,6 +1,6 @@
 # App Flow Document
 ## DSR Manager — Gas Station Daily Sales Record Web App
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** June 2026
 
 ---
@@ -14,9 +14,12 @@ App Start
    │
    └──► Authenticated
             │
-            ├──► First Login ──► Security Question Setup ──► Settings Page
+            ├──► First Login ──► Security Setup ──► Settings Page
             │
-            └──► Returning Login ──► Dashboard (Today's Date, Active/Last Shift)
+            └──► Returning ──► Today's Dashboard
+                                    │
+                                    └── Start background sync (every 30s if online)
+                                    └── Run 60-day cleanup
 ```
 
 ---
@@ -25,456 +28,357 @@ App Start
 
 ### 2.1 Login Flow
 ```
-User opens app
-   │
-   ├──► Session exists in localStorage?
-   │        │
-   │        ├── YES ──► Go to Dashboard
-   │        └── NO ──► Show Login Page
-   │
 Login Page
    │
-   ├── Enter Username + Password
-   ├── Toggle show/hide password
+   ├── Enter Username + Password (show/hide toggle)
    ├── Click "Login"
    │
-   ├──► Fetch /auth/owner from Firestore
+   ├──► Read /auth table from Dexie (local)
    │        │
-   │        ├── Username match + bcrypt compare password
-   │        │        │
+   │        ├── Username match + bcrypt compare
    │        │        ├── MATCH ──► Store session in localStorage
-   │        │        │                  │
-   │        │        │                  ├── First login? ──► Security Setup Page
-   │        │        │                  └── Returning? ──► Dashboard
-   │        │        │
+   │        │        │              ├── First login? ──► Security Setup Page
+   │        │        │              └── Returning? ──► Today's Dashboard
    │        │        └── NO MATCH ──► Toast error: "Invalid username or password"
    │        │
-   │        └── Network error ──► Toast: "No internet connection"
-   │
-   └── Click "Forgot Password?" ──► Forgot Password Flow
+   │        └── No local data (fresh install) ──► Pull from Supabase first, then retry
 ```
 
 ### 2.2 Forgot Password Flow
 ```
 Forgot Password Page
    │
-   ├── Enter Username
-   ├── Click "Verify"
-   │
-   ├──► Fetch /auth/owner, check username
-   │        │
-   │        ├── EXISTS ──► Show Security Question
-   │        └── NOT FOUND ──► Error: "Username not found"
-   │
-   ├── Enter Security Answer
-   ├── Click "Verify Answer"
-   │
-   ├──► bcrypt compare answer
-   │        │
-   │        ├── MATCH ──► Show: Username + Password (unmasked)
-   │        │              Show: "Set New Password" section
-   │        │              │
-   │        │              ├── Enter new password (validate rules)
-   │        │              ├── Confirm new password
-   │        │              ├── Click "Update Password"
-   │        │              └── Redirect to Login Page
-   │        │
+   ├── Enter Username → Verify against local Dexie
+   ├── Show Security Question
+   ├── Enter Answer → bcrypt compare
+   │        ├── MATCH ──► Show: Username + current password on screen
+   │        │              Show: Set New Password section
+   │        │              ├── Enter + confirm new password
+   │        │              ├── Validate password rules
+   │        │              ├── Hash + save to Dexie + queue Supabase sync
+   │        │              └── Redirect to Login
    │        └── NO MATCH ──► Error: "Incorrect answer"
 ```
 
-### 2.3 First Login Security Setup Flow
+### 2.3 First Login Security Setup
 ```
-Security Setup Page (mandatory, shown once after first login)
+Security Setup Page
    │
-   ├── Prompt: "Set up your security question for account recovery"
-   │
-   ├── Text input: "Your Security Question" (custom text)
-   ├── Text input: "Your Answer"
-   │
-   ├── Two options:
-   │        ├── "Save & Continue" ──► Save to Firestore ──► Settings Page
-   │        └── "Skip for Now" ──► Settings Page (can set later in Settings)
-   │
-   └── Settings Page ──► Shows nozzle/employee setup prompt for first-time users
+   ├── Custom security question (text input)
+   ├── Answer (text input)
+   ├── "Save & Continue" ──► Save to Dexie + queue sync ──► Settings Page
+   └── "Skip for Now" ──► Settings Page
 ```
 
 ---
 
 ## 3. Dashboard Flow
 
-### 3.1 Main Dashboard Load
+### 3.1 Dashboard Load (Today)
 ```
-Dashboard Page loads
+Dashboard loads
    │
-   ├── Run cleanup: delete Firestore records older than 60 days
-   ├── Fetch /metadata/calendar (list of dates with saved data)
-   ├── Set selected date = Today (IST)
-   ├── Fetch data for today's date
-   │
-   ├──► Load Shift Tabs
-   │        │
-   │        ├── Determine active tab:
-   │        │     ├── If any shifts saved → open last saved shift tab
-   │        │     └── If none saved → open Shift 1
-   │        │
-   │        └── Render active shift grid
-   │
-   └── Render calendar (today highlighted, saved dates marked)
+   ├── Run 60-day cleanup (Dexie + queue Supabase deletes)
+   ├── Start background sync if online
+   ├── Load today's date (IST)
+   ├── Fetch all 3 shifts for today from Dexie
+   ├── Determine active shift tab:
+   │        ├── Has unsaved shifts → open first unsaved
+   │        └── All saved or none → open Shift 1
+   ├── Load Daily Sales Bar (real-time totals from all saved shifts today)
+   └── Render shift grid
 ```
 
-### 3.2 Date Selection Flow
+### 3.2 Loading a Past Date (from Calendar)
 ```
-Owner clicks date on calendar
+Owner clicks date on Calendar page
    │
-   ├──► Is it today?
-   │        ├── YES ──► Load today's data (write mode if within 48hr)
-   │        └── NO ──► Is it within 60 days?
-   │                       ├── YES ──► Load past date (read-only mode)
-   │                       └── NO ──► Disabled (cannot select)
+   ├──► Is it today? → navigate to Dashboard (write mode)
+   ├──► Is it within 60 days? → navigate to Dashboard with that date (full edit mode)
+   └──► Is it older than 60 days or future? → disabled (cannot select)
    │
-   ├──► Is it a NEW date (no data)?
-   │        │
-   │        ├── Check: Was previous day's Shift 3 filled?
-   │        │        │
-   │        │        ├── YES ──► Auto-fill Shift 1 opening from Shift 3 closing
-   │        │        │          Show blank sheet with auto-filled openings
-   │        │        │
-   │        │        └── NO ──► Show popup:
-   │        │                   "Day [date] Shift 3 is not yet filled.
-   │        │                    Please complete it before entering data for [new date]."
-   │        │                   [Go to Shift 3] button ──► redirects to previous date Shift 3
-   │        │
-   │        └── Show blank entry sheet
-   │
-   └──► It's an EXISTING date ──► Load saved data for that date
+   On Dashboard with past date:
+   ├── Check: Was previous day's Shift 3 filled?
+   │        ├── YES ──► Auto-fill Shift 1 opening from Shift 3 closings (by row index)
+   │        └── NO ──► Popup: "Day [date] Shift 3 not filled. Go there first?"
+   │                   [Go to Shift 3] [Cancel]
+   └── Render shift grid (editable — no locking)
 ```
 
 ---
 
-## 4. Shift Entry Flow
+## 4. Calendar Page Flow
 
-### 4.1 Shift Tab Selection
+```
+Hamburger Menu → Calendar
+   │
+   ├── Open Calendar Page
+   ├── Display current month
+   ├── Highlighted dates: red dot for dates with saved data
+   │
+   ├── Owner navigates months (prev/next arrows)
+   │        └── Monthly Summary at bottom updates to show that month's totals
+   │
+   ├── Owner clicks a date:
+   │        ├── Date has data → navigate to Dashboard with that date
+   │        ├── Date is today → navigate to Dashboard (today mode)
+   │        ├── Empty date within 60 days → navigate to Dashboard (new entry)
+   │        └── Disabled date → no action
+   │
+   └── Monthly Summary Section (bottom of page):
+            ├── Shows: Diff (KG) | Sales (₹) | Cash | CC | UPI | Cash Party
+            ├── Aggregates all saved shifts for displayed month
+            └── Updates in real-time as month navigation changes
+```
+
+---
+
+## 5. Shift Entry Flow
+
+### 5.1 Shift Tab Selection
 ```
 Owner clicks Shift tab (1, 2, or 3)
    │
-   ├── Is shift data already loaded?
-   │        ├── YES ──► Render saved data (read-only or editable based on lock status)
-   │        └── NO ──► Load from Firestore (or show empty grid)
+   ├── Load shift data from Dexie (if not already in state)
+   ├── Show audit trail below tabs: "Last saved: DD/MM/YYYY HH:MM" (grey, small)
+   │        └── If never saved: hidden
    │
-   ├──► Shift status check:
-   │        ├── Never saved ──► Editable, Today's Price auto-filled
-   │        ├── Saved + within 48hr ──► Read-only, "Edit" button visible
-   │        ├── Saved + past 48hr ──► Read-only, locked (no Edit button)
-   │        └── Past date ──► Read-only always
+   ├── Check carryover:
+   │        ├── Shift 2 or 3 selected → check if previous shift is saved
+   │        │        ├── YES → Opening readings auto-filled (grey italic)
+   │        │        └── NO → Owner enters manually
+   │        └── Shift 1 of new date → check previous day Shift 3 (see 3.2)
    │
-   └──► Carryover check:
-            ├── Is this Shift 2 or 3? → Check if previous shift is saved
-            │        ├── YES → Opening readings auto-filled (grey italic)
-            │        └── NO → Owner enters manually
-            └── Render grid
+   └── Render grid (always editable — no locking in v2)
 ```
 
-### 4.2 Data Entry Row Flow
+### 5.2 Row Data Entry
 ```
-Owner fills a row:
-   │
-   [Nozzle Dropdown]
-   ├── Shows only configured nozzles
-   ├── Already-selected nozzles in other rows greyed out
-   └── Select nozzle → set in row
-   │
-   [Employee Dropdown]
-   ├── Shows all employees (repeats allowed)
-   └── Select employee → set in row
-   │
-   [Opening Reading] (number only, auto-filled or manual)
-   ├── Auto-filled from previous shift → grey italic
-   ├── Owner edits → italic removed
-   └── On blur → validate (> 0)
-   │
-   [Closing Reading] (number only)
+Nozzle Dropdown (with search box):
+   ├── Type to filter nozzle list
+   ├── Already-selected nozzles greyed out
+   └── Select → assign to row
+
+Employee Dropdown (with search box):
+   ├── Type to filter employee list
+   ├── Repeats allowed
+   └── Select → assign to row
+
+Opening Reading (number only):
+   ├── Auto-filled → grey italic
+   ├── Manual edit → removes italic
+   └── On blur: validate > 0
+
+Closing Reading (number only):
    └── On blur:
-            ├── Validate > 0
-            ├── Validate ≥ Opening
-            ├── Auto-calc Difference = Closing - Opening
-            └── Auto-calc Sales = Difference × Price
-   │
-   [Cash / CC / UPI] (number only, ≥ 0)
-   └── On blur:
-            └── Check per-row: Cash + CC + UPI = Sales
-                     ├── MATCH → no error
-                     └── MISMATCH → inline warning on row
+            ├── Validate > 0 and ≥ Opening
+            ├── Calc Difference = Closing - Opening
+            └── Calc Sales = Difference × Price
+
+Cash / CC / UPI / Cash Party (number only, ≥ 0):
+   └── On blur: check per-row reconciliation (Cash + CC + UPI + CashParty = Sales)
+               ├── PASS → no error shown
+               └── FAIL → inline warning on row (red border)
+
+Tab key navigation:
+   Nozzle → Employee → Opening → Closing → Cash → CC → UPI → Cash Party → next row Nozzle
+   (skips Difference and Sales auto-calc fields)
 ```
 
-### 4.3 Save Flow
+### 5.3 Save Flow
 ```
-Owner clicks "Save" button
+Owner clicks "Save Shift [N]"
    │
-   ├──► Run full shift validation:
+   ├── Run validateShift():
    │        ├── Today's Price > 0?
-   │        ├── All rows: all fields filled?
-   │        ├── All rows: Opening > 0, Closing > 0, Closing ≥ Opening?
-   │        ├── All rows: Cash/CC/UPI ≥ 0?
-   │        └── All rows: Cash + CC + UPI = Sales?
+   │        ├── All rows: fields filled, readings valid?
+   │        └── All rows: Cash + CC + UPI + CashParty = Sales?
    │
-   ├── VALIDATION FAILS:
-   │        └── Show popup listing all errors by row number + field
-   │            Block save
+   ├── FAILS:
+   │        └── Popup listing all errors by row; block save
    │
-   └── VALIDATION PASSES:
+   └── PASSES:
             │
-            ├── Write shift data to Firestore
-            ├── Record savedAt timestamp (IST)
-            ├── Set editWindowExpiry = savedAt + 48 hours
-            ├── Update /metadata/calendar with this date
+            ├── Check: Does this edit affect already-saved next shift?
+            │        ├── YES → Show generic warning popup:
+            │        │         "Editing this shift will update the opening
+            │        │          readings of the next shift. Continue?"
+            │        │         [Yes, Save] [Cancel]
+            │        └── NO → proceed directly
             │
-            ├── Update next shift's opening readings (carryover):
-            │        ├── Shift 1 saved → push closings to Shift 2 openings
-            │        ├── Shift 2 saved → push closings to Shift 3 openings
-            │        └── Shift 3 saved → push closings to next day Shift 1 openings
+            ├── Save to Dexie (instant, local)
+            ├── Queue for Supabase sync
+            ├── Update lastEditedAt timestamp
+            ├── Show audit trail: "Last saved: [now]"
             │
-            ├── If next shift already saved (even locked):
-            │        ├── Force-update opening readings in Firestore
-            │        └── Show banner on current shift:
-            │            "Shift [N+1]'s opening readings have been updated"
+            ├── Cascade carryover to next shift:
+            │        ├── Update next shift's opening readings (by row index)
+            │        └── Show banner: "Next shift's opening readings updated"
             │
+            ├── Update Daily Sales Bar (real-time)
             └── Toast: "Shift [N] saved successfully"
 ```
 
-### 4.4 Edit Flow
+---
+
+## 6. Daily Sales Bar Flow
+
 ```
-Owner clicks "Edit" button (within 48hr window only)
+Daily Sales Bar (always visible below shift grid)
    │
-   ├── Unlock entire shift grid (all fields become editable)
-   ├── Edit button disappears, Save button appears
-   │
-   ├── Owner makes changes
-   │
-   └── Owner clicks "Save"
-            │
-            ├── Run full validation again
-            ├── On pass:
-            │        ├── Write updated data to Firestore
-            │        ├── Reset editWindowExpiry = new savedAt + 48 hours
-            │        ├── Force-update next shift's openings
-            │        └── Show banner: "Shift [N+1]'s opening readings have been updated due to your edits"
-            │
-            └── On fail → show errors, block save
+   ├── Reads all saved shifts for current date from Dexie state
+   ├── Sums: Diff (KG) + Sales (₹) + Cash + CC + UPI + Cash Party
+   ├── Shows partial totals (from whatever shifts are saved)
+   ├── Updates in real time after every shift save
+   └── Visually distinct: highlighted card with "DAILY TOTAL" label
 ```
 
 ---
 
-## 5. Settings Flow
+## 7. Settings Flow
 
-### 5.1 Open Settings
-```
-Hamburger menu → Settings
-   │
-   └── Open Settings page (accessible anytime, no unsaved-change block)
-```
-
-### 5.2 Nozzle Management
+### 7.1 Nozzle Management
 ```
 Settings → Nozzle Management
    │
-   ├── View list of current nozzles (in order added)
-   │
-   ├── Add Nozzle:
-   │        ├── Type name → click "Add"
-   │        ├── Validate: not empty, not duplicate, max 15
-   │        ├── Save to Firestore /config/nozzles
-   │        └── Immediately appears in any open unsaved shift's dropdown
-   │
-   └── Remove Nozzle:
-            ├── Click "Remove" on nozzle
-            ├── Check: Is this nozzle selected in any open unsaved shift?
-            │        ├── YES → Warning popup:
-            │        │        "This nozzle is used in an unsaved shift.
-            │        │         The row will be greyed out until saved."
-            │        │         [Confirm] / [Cancel]
-            │        │         On Confirm → Remove from list, grey out row in shift
-            │        └── NO → Confirmation popup → Remove from Firestore
-            │
-            └── Historical records still show nozzle name (greyed-out text)
+   ├── View ordered list of nozzles
+   ├── Add: type name → validate (not empty, not duplicate, max 15) → save to Dexie + queue sync
+   │         └── Immediately appears in open unsaved shift dropdown
+   └── Remove: click Remove → confirm popup
+               ├── If in unsaved shift → warn → greyed-out row until saved
+               └── Soft delete (isActive: false) → historical records still show (greyed)
 ```
 
-### 5.3 Employee Management
+### 7.2 Employee Management
 ```
-Same flow as Nozzle Management
-   │
-   ├── Add Employee: name → validate → save → available in dropdown
-   └── Remove Employee:
-            ├── If in unsaved shift → warning → greyed-out row
-            └── Historical records → greyed-out name
+Same flow as Nozzle Management (max 50 employees)
 ```
 
-### 5.4 Change Password
+### 7.3 Change Password
 ```
 Settings → Change Password
-   │
-   ├── Enter current password
-   ├── Enter new password (show rules: 6-12 chars, upper+lower+number+@#$)
+   ├── Enter current password (verify via bcrypt)
+   ├── Enter new password (show rules)
    ├── Confirm new password
-   └── Click "Update"
-            ├── Validate current password (bcrypt compare)
-            ├── Validate new password regex
-            ├── Validate new = confirm
-            ├── Hash new password → save to Firestore
-            └── Toast: "Password updated successfully"
+   └── Update → hash → save to Dexie → queue sync → toast success
 ```
 
-### 5.5 Change Security Question
+### 7.4 Supabase Config
 ```
-Settings → Security Question
-   │
-   ├── Enter current answer (verify identity)
-   ├── Enter new question
-   ├── Enter new answer
-   └── Click "Update"
-            ├── Verify current answer (bcrypt compare)
-            ├── Hash new answer → save to Firestore
-            └── Toast: "Security question updated"
+Settings → Supabase Config
+   ├── Input: Supabase Project URL
+   ├── Input: Supabase Anon Key
+   ├── Click "Save & Test Connection"
+   │        ├── SUCCESS → "Connected ✓" green badge; start sync
+   │        └── FAIL → "Connection failed" error; retry
+   └── Credentials saved to Dexie settings table
 ```
 
 ---
 
-## 6. Export Flows
+## 8. Export Flows
 
-### 6.1 DSR Excel Export
+### 8.1 DSR Excel Export
 ```
 Hamburger → Export DSR
    │
-   ├── Show date picker (select which day to export)
-   ├── Owner selects date
-   │
-   ├──► Check: Are all 3 shifts for that date fully filled?
-   │        │
-   │        ├── YES → Generate Excel file → Auto-download
-   │        │         Filename: DDMMYYYY_DSR.xlsx
-   │        │
-   │        └── NO → Show popup:
-   │                 "The following shifts are incomplete:"
-   │                 • Shift 2 — [list of empty fields]
-   │                 • Shift 3 — Not started
-   │                 "Complete all shifts before exporting."
-   │
-   └── Done
+   ├── Date picker to select export date
+   ├── Check: all 3 shifts fully filled?
+   │        ├── YES → generate + auto-download DDMMYYYY_DSR.xlsx
+   │        └── NO → popup: "Shift 2 and Shift 3 are incomplete. Fill them first."
+   └── File includes Cash Party column in each of the 3 tabs
 ```
 
-### 6.2 Monthly Report
+### 8.2 Monthly Report
 ```
 Hamburger → Monthly Report
    │
-   ├── Open popup/modal
-   ├── Dropdown: list of available completed months (within 60 days, all days filled)
-   ├── Owner selects month
-   │
-   ├── Fetch all daily total records for that month
-   ├── Display on-screen table:
-   │        Columns: Date | Diff (KG) | Sales (₹) | Cash | CC | UPI
-   │        Rows: one per day
-   │        Last row: Grand Total
-   │
-   ├── "Export PDF" button
-   │        └── Generate PDF → Auto-download
-   │            Filename: MonthName_DSR.pdf
-   │
-   └── Close modal
+   ├── Open popup modal
+   ├── Dropdown: available complete months (within 60 days)
+   ├── Display table: Date | Diff KG | Sales ₹ | Cash | CC | UPI | Cash Party
+   ├── Grand Total row at bottom
+   └── "Export PDF" → auto-download MonthName_DSR.pdf
 ```
 
 ---
 
-## 7. History View Flow
+## 9. Sync Flow
 
 ```
-Owner selects a past date from calendar
+App loads → check online status
    │
-   ├──► Load date data from Firestore (or IndexedDB cache if offline)
+   ├── ONLINE → start 30-second sync interval
+   │              Every 30s:
+   │              ├── Push syncQueue items to Supabase
+   │              ├── Pull remote changes newer than lastPullAt
+   │              ├── Update sync indicator: "Synced ✓" (green)
+   │              └── On error: "Sync Failed — Retrying" (red)
    │
-   ├── Open in read-only mode (all inputs disabled, styled differently)
-   ├── Show 3 shift tabs
-   ├── Auto-open on last saved shift tab
-   │
-   ├── Greyed-out nozzles/employees (if they were later deleted) visible
-   ├── Auto-filled readings shown in grey italic
-   │
-   └── No Save, Edit, or Delete buttons visible
+   └── OFFLINE → sync indicator: "Offline — Local Only" (red)
+                  All data entry still works (Dexie)
+                  On reconnect → sync triggers immediately
 ```
 
 ---
 
-## 8. Offline Flow
+## 10. Offline Flow
 
 ```
 Internet connection lost
    │
-   ├── Banner appears at top: "No Internet Connection — Read-Only Mode"
-   ├── All input fields disabled
-   ├── All save/edit/export buttons disabled
-   ├── App shows cached (IndexedDB) data from last Firestore sync
-   │
-   └── Internet restored
-            ├── Banner disappears
-            └── Full access restored (re-fetch latest data)
+   ├── Sync indicator → "Offline — Local Only" (red, top-left header)
+   ├── All data entry continues to work (reads/writes to Dexie)
+   ├── Save actions work locally; queued for sync on reconnect
+   └── On reconnect:
+            ├── Sync indicator → "Syncing..." (amber)
+            ├── Push all queued changes to Supabase
+            └── Sync indicator → "Synced ✓" (green)
 ```
 
 ---
 
-## 9. Second Device Flow
-
-```
-Owner logs in on Device 2 (same credentials)
-   │
-   ├──► Firestore checks activeSessions
-   ├── Session ID mismatch detected
-   │
-   └── Device 2 → Read-Only Mode
-            ├── Banner: "Another session is active. You are in read-only mode."
-            └── All write operations blocked
-```
-
----
-
-## 10. Data Cleanup Flow
+## 11. Data Cleanup Flow
 
 ```
 On every login:
    │
-   ├── Calculate cutoff date: today − 60 days
-   ├── Query Firestore /records where date < cutoff
-   ├── Batch delete all matching documents
-   ├── Update /metadata/calendar to remove deleted dates
-   └── Continue to Dashboard (no notification to user)
+   ├── Calculate cutoff: today − 60 days
+   ├── Query Dexie shifts table where date < cutoff
+   ├── Delete from Dexie
+   ├── Queue deletions for Supabase sync
+   ├── Update calendar metadata
+   └── Continue silently (no user notification)
 ```
 
 ---
 
-## 11. Screen Map
+## 12. Screen Map
 
 ```
 /login                  → Login Page
 /forgot-password        → Forgot Password Page
-/setup                  → Security Question Setup (first login)
+/setup                  → Security Setup (first login)
 /                       → Dashboard (today's shift entry)
-/history/:date          → History View (read-only past date)
+/dashboard/:date        → Dashboard (specific date — edit or history)
+/calendar               → Calendar Page (date navigation + monthly summary)
 /settings               → Settings Page
 ```
 
 ---
 
-## 12. Error State Summary
+## 13. Error States Summary
 
 | Scenario | Handling |
 |----------|---------|
-| Wrong login credentials | Toast error, stay on login |
-| Forgot password — wrong answer | Inline error, stay on page |
-| Validation fails on save | Popup with row-by-row errors, block save |
-| Cash+CC+UPI ≠ Sales (per row) | Popup with row number, block save |
-| Export — shifts incomplete | Popup listing incomplete shifts, block export |
-| No internet on app open | Read-only mode with top banner |
+| Wrong login credentials | Toast error |
+| Forgot password — wrong answer | Inline error |
+| Validation fails on save | Popup with row-by-row error list |
+| Cash+CC+UPI+CashParty ≠ Sales | Popup with failing row numbers |
+| Export — shifts incomplete | Popup listing incomplete shifts |
 | Previous day Shift 3 not filled | Popup with redirect button |
-| Nozzle deleted while in unsaved shift | Warning popup, greyed-out row |
-| Today's Price = 0 on save | Toast error, block save |
-| Password too weak | Inline error with rules |
-| New nozzle when max 15 reached | Toast: "Maximum nozzle limit reached" |
-| New employee when max 50 reached | Toast: "Maximum employee limit reached" |
+| Edit affects next shift | Generic warning popup before save |
+| Nozzle deleted from unsaved shift | Warning + greyed row |
+| Today's Price = 0 on save | Toast error |
+| Supabase connection fails | "Sync Failed — Retrying" in header |
+| Max 15 nozzles reached | Toast: "Maximum nozzle limit reached" |
+| Max 50 employees reached | Toast: "Maximum employee limit reached" |

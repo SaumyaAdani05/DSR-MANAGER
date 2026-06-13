@@ -11,6 +11,7 @@ import NozzleManager from '../components/settings/NozzleManager';
 import EmployeeManager from '../components/settings/EmployeeManager';
 import ChangePassword from '../components/settings/ChangePassword';
 import SecurityQuestion from '../components/settings/SecurityQuestion';
+
 import { updateStationName } from '../services/settingsService';
 import { getOwnerData } from '../services/authService';
 
@@ -102,6 +103,8 @@ const SettingsPage = () => {
           <h2 className="text-sm font-semibold text-adani-navy mb-3">Employee Management</h2>
           <EmployeeManager employees={allEmployees || employees} onEmployeeChange={refreshEmployees} />
         </section>
+
+
 
         {/* Change Password */}
         <section className="bg-white rounded-lg shadow-card p-6">

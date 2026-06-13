@@ -1,6 +1,6 @@
 # Technical Requirements Document (TRD)
 ## DSR Manager — Gas Station Daily Sales Record Web App
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** June 2026  
 **Status:** Final
 
@@ -12,17 +12,19 @@
 |-------|-----------|---------------|
 | Frontend Framework | React 18 (Vite) | Fast build, large ecosystem, component reuse |
 | Styling | Tailwind CSS v3 | Utility-first, Adani theme via custom config |
-| State Management | React Context API + useReducer | Sufficient for single-user; scalable to Redux later |
+| State Management | React Context API + useReducer | Sufficient for single-user v1 |
 | Routing | React Router v6 | SPA navigation, protected routes |
-| Database | Firebase Firestore | Real-time, free tier, offline caching support |
-| Authentication | Custom (Firestore-based) | Username is not an email; Firebase Auth not suitable |
-| File Export (Excel) | SheetJS (xlsx) | Industry standard, browser-compatible |
-| File Export (PDF) | jsPDF + jspdf-autotable | Lightweight, no server needed |
+| Local Database | Dexie.js (IndexedDB wrapper) | Offline-first; survives cache clears when PWA installed |
+| Cloud Sync | Supabase (free tier — PostgreSQL) | Auto-sync every 30s; owner sets up free account |
+| Auth Storage | Supabase (custom table, bcrypt) | Not Firebase Auth; username is not email |
+| Excel Export | SheetJS (xlsx) | Industry standard, browser-compatible |
+| PDF Export | jsPDF + jspdf-autotable | Lightweight, no server needed |
 | Hosting | Vercel (free tier) | Continuous deployment, vercel.app subdomain |
 | PWA | Vite PWA Plugin (vite-plugin-pwa) | Service worker + manifest auto-generation |
-| Offline Cache | Workbox (via vite-plugin-pwa) | Stale-while-revalidate caching strategy |
+| Offline Cache | Workbox + Dexie.js | App shell cached; data in IndexedDB |
 | Timezone | date-fns-tz | IST conversions for all timestamps |
-| Number Format | Custom Intl.NumberFormat | Indian format (en-IN locale) |
+| Number Format | Intl.NumberFormat (en-IN) | Indian format |
+| Password Hashing | bcryptjs | Client-side hashing before Supabase write |
 
 ---
 
@@ -33,7 +35,7 @@ dsr-manager/
 ├── public/
 │   ├── manifest.json
 │   └── icons/
-│       └── dsr-icon-192.png
+│       ├── dsr-icon-192.png
 │       └── dsr-icon-512.png
 ├── src/
 │   ├── assets/
@@ -45,50 +47,62 @@ dsr-manager/
 │   │   ├── layout/
 │   │   │   ├── Header.jsx
 │   │   │   ├── SideDrawer.jsx
+│   │   │   ├── SyncIndicator.jsx
 │   │   │   └── ToastContainer.jsx
 │   │   ├── shift/
 │   │   │   ├── ShiftTabs.jsx
 │   │   │   ├── ShiftGrid.jsx
 │   │   │   ├── ShiftRow.jsx
 │   │   │   ├── TotalRow.jsx
-│   │   │   └── PriceHeader.jsx
+│   │   │   ├── DailySalesBar.jsx
+│   │   │   ├── PriceHeader.jsx
+│   │   │   └── AuditTrail.jsx
 │   │   ├── calendar/
-│   │   │   └── DatePicker.jsx
+│   │   │   ├── CalendarPage.jsx
+│   │   │   └── MonthlySummary.jsx
 │   │   ├── settings/
 │   │   │   ├── SettingsPage.jsx
 │   │   │   ├── NozzleManager.jsx
-│   │   │   └── EmployeeManager.jsx
+│   │   │   ├── EmployeeManager.jsx
+│   │   │   └── SupabaseConfig.jsx
 │   │   ├── export/
 │   │   │   ├── ExportDSR.jsx
 │   │   │   └── MonthlyReport.jsx
 │   │   └── ui/
 │   │       ├── Button.jsx
 │   │       ├── Input.jsx
-│   │       ├── Dropdown.jsx
+│   │       ├── SearchDropdown.jsx
 │   │       ├── Modal.jsx
 │   │       ├── Toast.jsx
-│   │       └── Badge.jsx
+│   │       ├── Badge.jsx
+│   │       └── WarningPopup.jsx
 │   ├── context/
 │   │   ├── AuthContext.jsx
 │   │   ├── ShiftContext.jsx
-│   │   └── SettingsContext.jsx
+│   │   ├── SettingsContext.jsx
+│   │   └── SyncContext.jsx
 │   ├── hooks/
 │   │   ├── useAuth.js
 │   │   ├── useShiftData.js
 │   │   ├── useNozzles.js
 │   │   ├── useEmployees.js
 │   │   ├── useCarryover.js
-│   │   └── useOnlineStatus.js
+│   │   ├── useOnlineStatus.js
+│   │   ├── useSync.js
+│   │   └── useDailyTotals.js
 │   ├── pages/
 │   │   ├── LoginPage.jsx
 │   │   ├── DashboardPage.jsx
-│   │   ├── HistoryPage.jsx
+│   │   ├── CalendarPage.jsx
 │   │   └── SettingsPage.jsx
+│   ├── db/
+│   │   ├── localDB.js          ← Dexie.js schema + instance
+│   │   └── supabaseClient.js   ← Supabase client init
 │   ├── services/
-│   │   ├── firebase.js
 │   │   ├── authService.js
 │   │   ├── shiftService.js
 │   │   ├── settingsService.js
+│   │   ├── syncService.js
 │   │   ├── exportService.js
 │   │   └── cleanupService.js
 │   ├── utils/
@@ -109,236 +123,360 @@ dsr-manager/
 
 ---
 
-## 3. Firebase Configuration
+## 3. Local Database — Dexie.js Schema (`src/db/localDB.js`)
 
-### 3.1 Services Used
-- **Firestore** — all data storage
-- **Firebase Hosting** — NOT used (Vercel used instead)
-- **Firebase Auth** — NOT used (custom auth via Firestore)
-
-### 3.2 Firebase Init (`src/services/firebase.js`)
 ```javascript
-import { initializeApp } from 'firebase/app';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import Dexie from 'dexie';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+export const db = new Dexie('DSRManager');
+
+db.version(1).stores({
+  // Auth & settings
+  auth:       '&id, username, passwordHash, securityQuestion, securityAnswerHash, isFirstLogin, updatedAt',
+  settings:   '&id, stationName, supabaseUrl, supabaseKey, updatedAt',
+  nozzles:    '++id, name, isActive, order, addedAt, syncedAt',
+  employees:  '++id, name, isActive, order, addedAt, syncedAt',
+
+  // Shift records
+  shifts:     '&[date+shiftNumber], date, shiftNumber, price, rows, totals, savedAt, lastEditedAt, syncedAt, isSynced',
+
+  // Sync queue — tracks unsynced local changes
+  syncQueue:  '++id, tableName, recordId, action, payload, createdAt',
+
+  // Metadata
+  calendar:   '&date, hasData, updatedAt',
+});
+
+export default db;
+```
+
+### Dexie Table Explanations
+
+| Table | Purpose |
+|-------|---------|
+| `auth` | Single owner document (id = "owner") |
+| `settings` | Station name + Supabase credentials |
+| `nozzles` | Global nozzle list with order |
+| `employees` | Global employee list with order |
+| `shifts` | Compound key [date+shiftNumber]; all shift data including rows JSON |
+| `syncQueue` | Queue of changes not yet synced to Supabase |
+| `calendar` | Date metadata for calendar dot indicators |
+
+---
+
+## 4. Cloud Database — Supabase Schema
+
+### 4.1 Supabase Setup (owner does once)
+1. Create free account at supabase.com
+2. Create new project
+3. Copy Project URL + anon public key
+4. Paste into DSR Manager Settings → Supabase Config
+5. App runs the table creation SQL on first sync
+
+### 4.2 SQL Schema (auto-run on first sync)
+
+```sql
+-- Auth table
+CREATE TABLE IF NOT EXISTS auth (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  security_question TEXT,
+  security_answer_hash TEXT,
+  is_first_login BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Settings table
+CREATE TABLE IF NOT EXISTS settings (
+  id TEXT PRIMARY KEY,
+  station_name TEXT DEFAULT 'Memnagar CNG',
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Nozzles table
+CREATE TABLE IF NOT EXISTS nozzles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  display_order INTEGER NOT NULL,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Employees table
+CREATE TABLE IF NOT EXISTS employees (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  display_order INTEGER NOT NULL,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Shifts table (main data table)
+CREATE TABLE IF NOT EXISTS shifts (
+  date TEXT NOT NULL,
+  shift_number INTEGER NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  rows JSONB NOT NULL,
+  totals JSONB NOT NULL,
+  saved_at TIMESTAMPTZ DEFAULT NOW(),
+  last_edited_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (date, shift_number)
+);
+
+-- Calendar metadata
+CREATE TABLE IF NOT EXISTS calendar (
+  date TEXT PRIMARY KEY,
+  has_data BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+## 5. Sync Architecture (`src/services/syncService.js`)
+
+### 5.1 Sync Flow
+```
+Every 30 seconds (when online):
+  1. Read all records from syncQueue (isSynced = false)
+  2. For each queued change:
+     a. UPSERT to Supabase matching table
+     b. On success: mark as synced in local Dexie table
+     c. Remove from syncQueue
+  3. Pull any remote changes newer than last sync timestamp
+  4. Update sync status indicator
+```
+
+### 5.2 Sync Service Core
+```javascript
+import { db } from '../db/localDB';
+import { supabase } from '../db/supabaseClient';
+
+let syncInterval = null;
+
+export const startSync = () => {
+  if (syncInterval) return;
+  syncInterval = setInterval(runSync, 30000); // 30 seconds
+  runSync(); // immediate first sync
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-
-// Enable offline persistence (Firestore IndexedDB cache)
-enableIndexedDbPersistence(db).catch(console.warn);
-```
-
-### 3.3 Environment Variables (`.env`)
-```
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
-```
-
----
-
-## 4. Authentication Architecture
-
-### 4.1 Custom Auth Flow
-Since the username is not an email, Firebase Email/Password Auth is not used. Authentication is handled via:
-- A single document in Firestore: `/auth/owner`
-- Contains: `username`, `passwordHash` (bcrypt), `securityQuestion`, `securityAnswerHash`
-- On login: fetch document, compare input with stored hash using bcryptjs
-
-### 4.2 Session Management
-- On successful login, store session in `localStorage`:
-  ```json
-  { "isAuthenticated": true, "sessionId": "uuid", "loginTime": "ISO timestamp" }
-  ```
-- All protected routes check `localStorage` for session
-- Logout clears `localStorage` session
-- Second device: check Firestore `activeSessions` array; if session ID mismatch → read-only mode
-
-### 4.3 Password Hashing
-- Library: `bcryptjs`
-- Salt rounds: 10
-- Applied to both password and security answer
-
-### 4.4 Password Validation Regex
-```javascript
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$])[A-Za-z\d@#$]{6,12}$/;
-```
-
----
-
-## 5. Routing
-
-```javascript
-// App.jsx routes
-<Routes>
-  <Route path="/login" element={<LoginPage />} />
-  <Route path="/forgot-password" element={<ForgotPassword />} />
-  <Route path="/setup" element={<SecuritySetup />} />
-  <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-  <Route path="/history/:date" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
-  <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-</Routes>
-```
-
-### Protected Route
-```javascript
-const ProtectedRoute = ({ children }) => {
-  const session = JSON.parse(localStorage.getItem('dsr_session'));
-  if (!session?.isAuthenticated) return <Navigate to="/login" />;
-  return children;
+export const stopSync = () => {
+  clearInterval(syncInterval);
+  syncInterval = null;
 };
-```
 
----
+export const runSync = async () => {
+  if (!navigator.onLine) return;
 
-## 6. State Management
+  try {
+    setSyncStatus('syncing');
 
-### 6.1 AuthContext
-```javascript
-{
-  isAuthenticated: boolean,
-  isReadOnly: boolean,        // second device or offline
-  isFirstLogin: boolean,
-  logout: () => void,
-}
-```
-
-### 6.2 ShiftContext
-```javascript
-{
-  selectedDate: string,       // YYYY-MM-DD
-  activeShift: number,        // 1, 2, or 3
-  shiftData: {
-    shift1: ShiftObject,
-    shift2: ShiftObject,
-    shift3: ShiftObject,
-  },
-  setSelectedDate: () => void,
-  setActiveShift: () => void,
-  saveShift: (shiftNum) => void,
-  editShift: (shiftNum) => void,
-}
-```
-
-### 6.3 ShiftObject Shape
-```javascript
-{
-  price: number,              // Today's price per KG
-  rows: [
-    {
-      nozzle: string,
-      employee: string,
-      openingReading: number,
-      closingReading: number,
-      difference: number,     // auto-calculated
-      salesRs: number,        // auto-calculated
-      cash: number,
-      cc: number,
-      upi: number,
-      isOpeningAutoFilled: boolean,  // for grey italic indicator
+    // Push local changes
+    const queue = await db.syncQueue.toArray();
+    for (const item of queue) {
+      await pushToSupabase(item);
+      await db.syncQueue.delete(item.id);
     }
-  ],
-  totals: {
-    difference: number,
-    salesRs: number,
-    cash: number,
-    cc: number,
-    upi: number,
-  },
-  savedAt: timestamp,
-  editWindowExpiry: timestamp,   // savedAt + 48 hours
-  isLocked: boolean,
-  isSaved: boolean,
-}
+
+    // Pull remote changes
+    await pullFromSupabase();
+
+    setSyncStatus('synced');
+  } catch (err) {
+    setSyncStatus('error');
+    console.error('Sync failed:', err);
+  }
+};
+
+const pushToSupabase = async (queueItem) => {
+  const { tableName, payload } = queueItem;
+  const { error } = await supabase.from(tableName).upsert(payload);
+  if (error) throw error;
+};
+
+const pullFromSupabase = async () => {
+  // Pull shifts updated since last pull
+  const lastPull = localStorage.getItem('lastPullAt') || '1970-01-01';
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('*')
+    .gt('last_edited_at', lastPull);
+
+  if (error) throw error;
+
+  for (const row of data) {
+    await db.shifts.put({
+      date: row.date,
+      shiftNumber: row.shift_number,
+      price: row.price,
+      rows: row.rows,
+      totals: row.totals,
+      savedAt: row.saved_at,
+      lastEditedAt: row.last_edited_at,
+      isSynced: true,
+    });
+  }
+
+  localStorage.setItem('lastPullAt', new Date().toISOString());
+};
 ```
 
-### 6.4 SettingsContext
+### 5.3 Queue a Change (called after every local save)
 ```javascript
-{
-  stationName: string,
-  nozzles: string[],          // ordered list
-  employees: string[],        // ordered list
-  updateStationName: () => void,
-  addNozzle: () => void,
-  removeNozzle: () => void,
-  addEmployee: () => void,
-  removeEmployee: () => void,
-}
+export const queueSync = async (tableName, recordId, payload) => {
+  await db.syncQueue.add({
+    tableName,
+    recordId,
+    action: 'upsert',
+    payload,
+    createdAt: new Date().toISOString(),
+  });
+};
 ```
 
 ---
 
-## 7. Calculation Engine (`src/utils/calculations.js`)
+## 6. Authentication Architecture (`src/services/authService.js`)
 
 ```javascript
-// Triggered on field blur (not on every keystroke)
+import bcrypt from 'bcryptjs';
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
 
-export const calcDifference = (closing, opening) => 
+export const loginOwner = async (username, password) => {
+  const owner = await db.auth.get('owner');
+  if (!owner || owner.username !== username) throw new Error('Invalid credentials');
+  const match = await bcrypt.compare(password, owner.passwordHash);
+  if (!match) throw new Error('Invalid credentials');
+
+  // Store session
+  localStorage.setItem('dsr_session', JSON.stringify({
+    isAuthenticated: true,
+    sessionId: crypto.randomUUID(),
+    loginTime: new Date().toISOString(),
+  }));
+  return owner;
+};
+
+export const updatePassword = async (newPassword) => {
+  const hash = await bcrypt.hash(newPassword, 10);
+  await db.auth.update('owner', { passwordHash: hash, updatedAt: new Date().toISOString() });
+  await queueSync('auth', 'owner', { id: 'owner', password_hash: hash });
+};
+
+export const updateSecurityQuestion = async (question, answer) => {
+  const answerHash = await bcrypt.hash(answer, 10);
+  await db.auth.update('owner', {
+    securityQuestion: question,
+    securityAnswerHash: answerHash,
+    isFirstLogin: false,
+    updatedAt: new Date().toISOString(),
+  });
+  await queueSync('auth', 'owner', {
+    id: 'owner',
+    security_question: question,
+    security_answer_hash: answerHash,
+    is_first_login: false,
+  });
+};
+
+export const verifySecurityAnswer = async (answer) => {
+  const owner = await db.auth.get('owner');
+  return bcrypt.compare(answer, owner.securityAnswerHash);
+};
+```
+
+---
+
+## 7. Shift Service (`src/services/shiftService.js`)
+
+```javascript
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
+
+export const saveShift = async (date, shiftNumber, shiftData) => {
+  const now = new Date().toISOString();
+  const record = {
+    date,
+    shiftNumber,
+    price: shiftData.price,
+    rows: shiftData.rows,
+    totals: shiftData.totals,
+    savedAt: now,
+    lastEditedAt: now,
+    isSynced: false,
+  };
+
+  // Save locally first (instant)
+  await db.shifts.put(record);
+
+  // Update calendar metadata
+  await db.calendar.put({ date, hasData: true, updatedAt: now });
+
+  // Queue for cloud sync
+  await queueSync('shifts', `${date}_${shiftNumber}`, {
+    date,
+    shift_number: shiftNumber,
+    price: shiftData.price,
+    rows: shiftData.rows,
+    totals: shiftData.totals,
+    last_edited_at: now,
+  });
+};
+
+export const getShift = async (date, shiftNumber) => {
+  return db.shifts.get([date, shiftNumber]);
+};
+
+export const getAllShiftsForDate = async (date) => {
+  return db.shifts.where('date').equals(date).toArray();
+};
+
+export const getDailyTotals = async (date) => {
+  const shifts = await getAllShiftsForDate(date);
+  return shifts.reduce((acc, shift) => ({
+    totalDifference: acc.totalDifference + (shift.totals?.totalDifference || 0),
+    totalSalesRs: acc.totalSalesRs + (shift.totals?.totalSalesRs || 0),
+    totalCash: acc.totalCash + (shift.totals?.totalCash || 0),
+    totalCC: acc.totalCC + (shift.totals?.totalCC || 0),
+    totalUPI: acc.totalUPI + (shift.totals?.totalUPI || 0),
+    totalCashParty: acc.totalCashParty + (shift.totals?.totalCashParty || 0),
+  }), { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0, totalCashParty: 0 });
+};
+```
+
+---
+
+## 8. Calculation Engine (`src/utils/calculations.js`)
+
+```javascript
+// All triggered on field blur (not on keystroke)
+
+export const calcDifference = (closing, opening) =>
   parseFloat((closing - opening).toFixed(2));
 
-export const calcSales = (difference, price) => 
+export const calcSales = (difference, price) =>
   parseFloat((difference * price).toFixed(2));
 
 export const calcRowTotals = (rows) => ({
-  difference: rows.reduce((sum, r) => sum + (r.difference || 0), 0),
-  salesRs: rows.reduce((sum, r) => sum + (r.salesRs || 0), 0),
-  cash: rows.reduce((sum, r) => sum + (r.cash || 0), 0),
-  cc: rows.reduce((sum, r) => sum + (r.cc || 0), 0),
-  upi: rows.reduce((sum, r) => sum + (r.upi || 0), 0),
+  totalDifference: rows.reduce((s, r) => s + (r.difference || 0), 0),
+  totalSalesRs:    rows.reduce((s, r) => s + (r.salesRs || 0), 0),
+  totalCash:       rows.reduce((s, r) => s + (r.cash || 0), 0),
+  totalCC:         rows.reduce((s, r) => s + (r.cc || 0), 0),
+  totalUPI:        rows.reduce((s, r) => s + (r.upi || 0), 0),
+  totalCashParty:  rows.reduce((s, r) => s + (r.cashParty || 0), 0),
 });
 
-export const isReconciled = (row) => 
-  parseFloat((row.cash + row.cc + row.upi).toFixed(2)) === parseFloat(row.salesRs.toFixed(2));
-```
-
----
-
-## 8. Number & Date Formatting (`src/utils/formatters.js`)
-
-```javascript
-// Indian number format
-export const formatINR = (value) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-
-export const formatNumber = (value) =>
-  new Intl.NumberFormat('en-IN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-
-// Date format: DD/MM/YYYY
-export const formatDisplayDate = (date) =>
-  new Intl.DateTimeFormat('en-IN', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    timeZone: 'Asia/Kolkata',
-  }).format(new Date(date));
-
-// Firestore key: YYYY-MM-DD
-export const formatFirestoreDate = (date) => {
-  const ist = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  return ist.toISOString().split('T')[0];
+// Reconciliation: Cash + CC + UPI + CashParty = Sales
+export const isReconciled = (row) => {
+  const payments = parseFloat(
+    (row.cash + row.cc + row.upi + row.cashParty).toFixed(2)
+  );
+  return payments === parseFloat(row.salesRs.toFixed(2));
 };
-
-// Export filename: DDMMYYYY
-export const formatExportDate = (dateStr) => dateStr.replace(/-/g, '').split('').reverse().join('').replace(/(\d{4})(\d{2})(\d{2})/, '$3$2$1');
-// YYYY-MM-DD → DDMMYYYY
 ```
 
 ---
@@ -346,36 +484,27 @@ export const formatExportDate = (dateStr) => dateStr.replace(/-/g, '').split('')
 ## 9. Validation Engine (`src/utils/validators.js`)
 
 ```javascript
-export const validateRow = (row) => {
+export const validateRow = (row, rowIndex) => {
   const errors = [];
-
-  if (!row.nozzle) errors.push('Nozzle is required');
-  if (!row.employee) errors.push('Employee is required');
+  if (!row.nozzle) errors.push(`Row ${rowIndex + 1}: Nozzle is required`);
+  if (!row.employee) errors.push(`Row ${rowIndex + 1}: Employee is required`);
   if (!row.openingReading || row.openingReading <= 0)
-    errors.push('Opening Reading must be greater than 0');
+    errors.push(`Row ${rowIndex + 1}: Opening Reading must be > 0`);
   if (!row.closingReading || row.closingReading <= 0)
-    errors.push('Closing Reading must be greater than 0');
+    errors.push(`Row ${rowIndex + 1}: Closing Reading must be > 0`);
   if (row.closingReading < row.openingReading)
-    errors.push('Closing Reading must be ≥ Opening Reading');
-  if (row.cash < 0 || row.cc < 0 || row.upi < 0)
-    errors.push('Cash, CC, UPI cannot be negative');
+    errors.push(`Row ${rowIndex + 1}: Closing must be ≥ Opening`);
+  if ([row.cash, row.cc, row.upi, row.cashParty].some(v => v < 0))
+    errors.push(`Row ${rowIndex + 1}: Payment fields cannot be negative`);
   if (!isReconciled(row))
-    errors.push(`Row reconciliation failed: Cash + CC + UPI (${row.cash + row.cc + row.upi}) ≠ Sales (${row.salesRs})`);
-
+    errors.push(`Row ${rowIndex + 1}: Cash + CC + UPI + Cash Party (${(row.cash+row.cc+row.upi+row.cashParty).toFixed(2)}) ≠ Sales (${row.salesRs.toFixed(2)})`);
   return errors;
 };
 
 export const validateShift = (shift) => {
   if (!shift.price || shift.price <= 0)
-    return ['Today\'s Price must be greater than 0'];
-  
-  const allErrors = [];
-  shift.rows.forEach((row, i) => {
-    const rowErrors = validateRow(row);
-    if (rowErrors.length > 0)
-      allErrors.push({ rowIndex: i + 1, nozzle: row.nozzle, errors: rowErrors });
-  });
-  return allErrors;
+    return ["Today's Price must be greater than 0"];
+  return shift.rows.flatMap((row, i) => validateRow(row, i));
 };
 
 export const validatePassword = (password) =>
@@ -384,156 +513,131 @@ export const validatePassword = (password) =>
 
 ---
 
-## 10. Firestore Read Optimization
-
-### 10.1 Strategies
-- **Lazy Load History**: Only load a date's data when the user selects it from the calendar
-- **Cache Firestore Reads**: Use Firestore's built-in IndexedDB offline persistence
-- **Batch Writes**: Write all 3 shifts of a day in a Firestore batch
-- **Paginate Calendar**: Only fetch metadata (dates with data) for the past 60 days on login, not full records
-- **Single Document Per Shift**: Each shift is one document — one read loads all row data
-
-### 10.2 Calendar Metadata Collection
-- A lightweight `/metadata/calendar` document stores an array of dates that have saved data
-- Updated on each shift save (batch write with the shift document)
-- Calendar UI reads only this one document to highlight dates (instead of querying 60 documents)
-
-### 10.3 Listener Strategy
-- Do **not** use real-time `onSnapshot` listeners on shift data (wasteful for single user)
-- Use one-time `getDoc` reads when the user selects a date or shift
-- Use `onSnapshot` only for the `activeSessions` document to detect second-device login
-
----
-
-## 11. Edit Window & Lock Logic
+## 10. Carryover Engine (`src/hooks/useCarryover.js`)
 
 ```javascript
-// Check if shift is editable
-export const isEditable = (shift) => {
-  if (!shift.isSaved) return true;               // Never saved = always editable
-  const now = Date.now();
-  const expiry = shift.editWindowExpiry?.toMillis?.() || 0;
-  return now < expiry;                            // Within 48 hours of last save
-};
+import { getShift } from '../services/shiftService';
 
-// Calculate edit window expiry (48 hours from save time, IST)
-export const calcEditExpiry = (savedAt) => {
-  const expiry = new Date(savedAt);
-  expiry.setHours(expiry.getHours() + 48);
-  return expiry;
-};
-```
-
----
-
-## 12. Carryover Engine (`src/hooks/useCarryover.js`)
-
-```javascript
-// Get opening readings for shift N from shift N-1 closings (same day)
-export const getCarryoverFromPrevShift = (prevShiftRows) =>
+// Get opening readings for shift N from shift N-1 closings (by row position index)
+export const getCarryoverFromShift = (prevShiftRows) =>
   prevShiftRows.map((row) => ({
-    nozzle: row.nozzle,
+    nozzleId: row.nozzleId,
     openingReading: row.closingReading,
-    isAutoFilled: true,
+    isOpeningAutoFilled: true,
   }));
 
-// Get opening readings for Day N+1 Shift 1 from Day N Shift 3
-export const getCarryoverFromPrevDay = (prevDayShift3Rows) =>
-  getCarryoverFromPrevShift(prevDayShift3Rows);
+// Cascade update: when a shift is saved, update next shift's opening readings
+export const cascadeCarryover = async (date, shiftNumber, savedRows) => {
+  const nextShiftNum = shiftNumber + 1;
+  let nextDate = date;
 
-// Apply carryover by row position index (fixed row-position matching)
-export const applyCarryover = (currentRows, carryoverData) =>
-  currentRows.map((row, index) => ({
+  // If editing Shift 3, carryover goes to next day Shift 1
+  if (shiftNumber === 3) {
+    nextDate = getNextDate(date);
+    nextShiftNum = 1; // already declared above but override
+  }
+
+  const nextShift = await getShift(nextDate, nextShiftNum === 4 ? 1 : nextShiftNum);
+  if (!nextShift) return; // No next shift to update
+
+  const updatedRows = nextShift.rows.map((row, i) => ({
     ...row,
-    openingReading: carryoverData[index]?.openingReading ?? row.openingReading,
-    isOpeningAutoFilled: carryoverData[index] ? true : false,
+    openingReading: savedRows[i]?.closingReading ?? row.openingReading,
+    isOpeningAutoFilled: true,
   }));
+
+  await saveShift(nextDate, nextShiftNum === 4 ? 1 : nextShiftNum, {
+    ...nextShift,
+    rows: updatedRows,
+  });
+};
 ```
 
 ---
 
-## 13. Data Cleanup Service (`src/services/cleanupService.js`)
+## 11. Sync Status Context (`src/context/SyncContext.jsx`)
 
 ```javascript
-// Runs on app load after login
-export const cleanOldRecords = async () => {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 60);
-  const cutoffStr = cutoff.toISOString().split('T')[0]; // YYYY-MM-DD
+import { createContext, useContext, useState } from 'react';
 
-  // Query all records older than 60 days
-  const q = query(
-    collection(db, 'records'),
-    where('date', '<', cutoffStr)
+const SyncContext = createContext();
+
+export const SyncProvider = ({ children }) => {
+  const [syncStatus, setSyncStatus] = useState('synced');
+  // 'synced' | 'syncing' | 'offline' | 'error'
+
+  return (
+    <SyncContext.Provider value={{ syncStatus, setSyncStatus }}>
+      {children}
+    </SyncContext.Provider>
   );
-  const snapshot = await getDocs(q);
-  
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-  await batch.commit();
+};
+
+export const useSyncStatus = () => useContext(SyncContext);
+```
+
+---
+
+## 12. Online Status Hook (`src/hooks/useOnlineStatus.js`)
+
+```javascript
+import { useState, useEffect } from 'react';
+import { startSync, stopSync } from '../services/syncService';
+
+export const useOnlineStatus = () => {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => { setIsOnline(true); startSync(); };
+    const handleOffline = () => { setIsOnline(false); stopSync(); };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    if (navigator.onLine) startSync();
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return isOnline;
 };
 ```
 
 ---
 
-## 14. Export Services
+## 13. Tailwind Configuration (Adani Theme)
 
-### 14.1 DSR Excel Export (`src/services/exportService.js`)
 ```javascript
-import * as XLSX from 'xlsx';
-
-export const exportDSR = (date, shift1, shift2, shift3, stationName) => {
-  const wb = XLSX.utils.book_new();
-
-  [shift1, shift2, shift3].forEach((shift, i) => {
-    const shiftName = `SHIFT${i + 1}`;
-    const rows = [
-      [stationName],
-      [`Date: ${formatDisplayDate(date)}`],
-      [],
-      ['Nozzle', 'Employee', 'Opening', 'Closing', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI'],
-      ...shift.rows.map((r) => [r.nozzle, r.employee, r.openingReading, r.closingReading,
-        r.difference, r.salesRs, r.cash, r.cc, r.upi]),
-      ['TOTAL', '', '', '', shift.totals.difference, shift.totals.salesRs,
-        shift.totals.cash, shift.totals.cc, shift.totals.upi],
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, shiftName);
-  });
-
-  const filename = `${formatExportDate(date)}_DSR.xlsx`;
-  XLSX.writeFile(wb, filename);
-};
-```
-
-### 14.2 Monthly PDF Export
-```javascript
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-
-export const exportMonthlyPDF = (monthName, year, rows, stationName) => {
-  const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text(stationName, 14, 15);
-  doc.setFontSize(12);
-  doc.text(`Monthly DSR — ${monthName} ${year}`, 14, 25);
-
-  autoTable(doc, {
-    startY: 30,
-    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI']],
-    body: rows.map((r) => [r.date, r.totalDiff, r.totalSales, r.totalCash, r.totalCC, r.totalUPI]),
-    foot: [['TOTAL', ...calculateMonthTotals(rows)]],
-  });
-
-  doc.save(`${monthName}_DSR.pdf`);
+// tailwind.config.js
+module.exports = {
+  content: ['./src/**/*.{js,jsx}'],
+  theme: {
+    extend: {
+      colors: {
+        adani: {
+          navy:      '#003087',
+          navyDark:  '#001f5b',
+          navyLight: '#0041b3',
+          red:       '#E2231A',
+          redDark:   '#b51813',
+          white:     '#FFFFFF',
+          lightGray: '#F4F5F7',
+          gray:      '#6B7280',
+          border:    '#D1D5DB',
+        },
+      },
+      fontFamily: { sans: ['Inter', 'sans-serif'] },
+      boxShadow: { card: '0 2px 8px rgba(0,48,135,0.12)' },
+    },
+  },
+  plugins: [],
 };
 ```
 
 ---
 
-## 15. PWA Configuration
+## 14. PWA Configuration (`vite.config.js`)
 
-### 15.1 `vite.config.js`
 ```javascript
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -543,20 +647,20 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',         // Silent auto-update
+      registerType: 'autoUpdate',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/firestore\.googleapis\.com/,
-            handler: 'StaleWhileRevalidate',
+            urlPattern: /^https:\/\/.*\.supabase\.co/,
+            handler: 'NetworkFirst',
+            options: { cacheName: 'supabase-cache' },
           },
         ],
       },
       manifest: {
         name: 'DSR Manager',
         short_name: 'DSR',
-        description: 'Gas Station Daily Sales Record Manager',
         theme_color: '#003087',
         background_color: '#003087',
         display: 'standalone',
@@ -572,83 +676,61 @@ export default defineConfig({
 
 ---
 
-## 16. Tailwind Configuration (Adani Theme)
+## 15. Export Services
 
-### 16.1 `tailwind.config.js`
+### 15.1 DSR Excel Export
 ```javascript
-module.exports = {
-  content: ['./src/**/*.{js,jsx}'],
-  theme: {
-    extend: {
-      colors: {
-        adani: {
-          navy: '#003087',       // Primary background, headers
-          navyDark: '#001f5b',   // Darker navy for sidebar
-          navyLight: '#0041b3',  // Hover states
-          red: '#E2231A',        // Accent, CTA buttons, active states
-          redDark: '#b51813',    // Button hover
-          white: '#FFFFFF',
-          lightGray: '#F4F5F7',  // Page backgrounds
-          gray: '#6B7280',       // Secondary text
-          border: '#D1D5DB',     // Input borders
-        },
-      },
-      fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-      },
-      boxShadow: {
-        card: '0 2px 8px rgba(0, 48, 135, 0.12)',
-      },
-    },
-  },
-  plugins: [],
+import * as XLSX from 'xlsx';
+
+export const exportDSR = (date, shifts, stationName) => {
+  const wb = XLSX.utils.book_new();
+  shifts.forEach((shift, i) => {
+    const rows = [
+      [stationName],
+      [`Date: ${formatDisplayDate(date)}`],
+      [],
+      ['Nozzle','Employee','Opening','Closing','Diff (KG)','Sales (₹)','Cash','CC','UPI','Cash Party'],
+      ...shift.rows.map(r => [
+        r.nozzleName, r.employeeName, r.openingReading, r.closingReading,
+        r.difference, r.salesRs, r.cash, r.cc, r.upi, r.cashParty
+      ]),
+      ['TOTAL','','','',
+        shift.totals.totalDifference, shift.totals.totalSalesRs,
+        shift.totals.totalCash, shift.totals.totalCC,
+        shift.totals.totalUPI, shift.totals.totalCashParty
+      ],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, `SHIFT${i + 1}`);
+  });
+  XLSX.writeFile(wb, `${formatExportDate(date)}_DSR.xlsx`);
+};
+```
+
+### 15.2 Monthly PDF Export
+```javascript
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+export const exportMonthlyPDF = (monthName, year, rows, stationName) => {
+  const doc = new jsPDF('landscape');
+  doc.setFontSize(16);
+  doc.text(stationName, 14, 15);
+  doc.setFontSize(12);
+  doc.text(`Monthly DSR — ${monthName} ${year}`, 14, 25);
+  autoTable(doc, {
+    startY: 30,
+    head: [['Date','Diff (KG)','Sales (₹)','Cash','CC','UPI','Cash Party']],
+    body: rows.map(r => [r.date, r.totalDifference, r.totalSalesRs, r.totalCash, r.totalCC, r.totalUPI, r.totalCashParty]),
+    foot: [['TOTAL', ...calculateMonthTotals(rows)]],
+  });
+  doc.save(`${monthName}_DSR.pdf`);
 };
 ```
 
 ---
 
-## 17. Online Status Hook (`src/hooks/useOnlineStatus.js`)
-
-```javascript
-import { useState, useEffect } from 'react';
-
-export const useOnlineStatus = () => {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  return isOnline;
-};
-```
-
----
-
-## 18. Toast Notification System
-
-- Position: top-right corner
-- Duration: 4 seconds (auto-dismiss)
-- Types: `success` (green), `error` (red), `warning` (amber), `info` (navy)
-- Library: `react-hot-toast` or custom implementation with Tailwind
-
-```javascript
-// Usage
-toast.success('Shift 1 saved successfully');
-toast.error('Cash + CC + UPI does not match Sales in Row 3');
-toast.warning('Shift 2 opening readings updated due to Shift 1 edit');
-```
-
----
-
-## 19. Dependencies (`package.json` key deps)
+## 16. Dependencies (`package.json`)
 
 ```json
 {
@@ -656,7 +738,8 @@ toast.warning('Shift 2 opening readings updated due to Shift 1 edit');
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
-    "firebase": "^10.8.0",
+    "dexie": "^3.2.4",
+    "@supabase/supabase-js": "^2.39.0",
     "bcryptjs": "^2.4.3",
     "xlsx": "^0.18.5",
     "jspdf": "^2.5.1",
@@ -679,63 +762,11 @@ toast.warning('Shift 2 opening readings updated due to Shift 1 edit');
 
 ---
 
-## 20. Firestore Security Rules
+## 17. Environment Variables (`.env`)
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Auth document — readable only (login check), writable only from app logic
-    match /auth/owner {
-      allow read: if true;                  // Needed to verify login
-      allow write: if request.auth == null; // Only server-side (or migration script)
-    }
-
-    // All app data — restricted to authenticated session
-    match /records/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /config/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /metadata/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
-
-    function isAuthenticated() {
-      return request.headers.keys().hasAll(['x-session-id']) ||
-             exists(/databases/$(database)/documents/sessions/$(request.headers['x-session-id']));
-    }
-  }
-}
+```
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-> Note: Since we use custom auth (not Firebase Auth), session validation is enforced at the application level. Firestore rules serve as an additional layer. Consider moving to Firebase Auth in v2 for stronger server-side enforcement.
-
----
-
-## 21. Deployment (Vercel)
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel --prod
-
-# Environment Variables (set in Vercel dashboard)
-VITE_FIREBASE_API_KEY
-VITE_FIREBASE_AUTH_DOMAIN
-VITE_FIREBASE_PROJECT_ID
-VITE_FIREBASE_STORAGE_BUCKET
-VITE_FIREBASE_MESSAGING_SENDER_ID
-VITE_FIREBASE_APP_ID
-```
-
-- Framework preset: **Vite**
-- Build command: `npm run build`
-- Output directory: `dist`
-- Auto-deploy on push to `main` branch (if GitHub connected)
+> These are stored in `.env` and also saved to Dexie `settings` table via the Settings page for runtime use. Supabase anon key is safe to expose client-side (row-level security handles access).

@@ -1,180 +1,192 @@
-import { calcEditExpiry } from '../utils/dateUtils';
-import { calcRowTotals } from '../utils/calculations';
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
+import { getTodayStr, getCutoffDate } from '../utils/dateUtils';
+import { getMonthName } from '../utils/formatters';
 
-const RECORDS_KEY = 'dsr_records';
-const CALENDAR_KEY = 'dsr_calendar';
-
-// Helper to load all records
-const loadAllRecords = () => {
-  const data = localStorage.getItem(RECORDS_KEY);
-  return data ? JSON.parse(data) : {};
-};
-
-// Helper to save all records
-const saveAllRecords = (records) => {
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-};
-
-export const getShift = async (date, shiftNum) => {
-  const records = loadAllRecords();
-  return records[date]?.shifts?.[`shift${shiftNum}`] || null;
-};
-
-export const getDateRecord = async (date) => {
-  const records = loadAllRecords();
-  return records[date] || null;
-};
-
-export const saveShift = async (date, shiftNum, shiftData) => {
-  const records = loadAllRecords();
-  const now = new Date();
-  const editExpiry = calcEditExpiry(now);
-  const totals = calcRowTotals(shiftData.rows);
-
-  const shiftDoc = {
-    shiftNumber: shiftNum,
-    date,
-    price: shiftData.price,
-    rows: shiftData.rows.map((row, i) => ({
-      rowIndex: i,
-      nozzleId: row.nozzleId || '',
-      nozzleName: row.nozzleName || '',
-      nozzleIsActive: row.nozzleIsActive !== false,
-      employeeId: row.employeeId || '',
-      employeeName: row.employeeName || '',
-      employeeIsActive: row.employeeIsActive !== false,
-      openingReading: parseFloat(row.openingReading) || 0,
-      closingReading: parseFloat(row.closingReading) || 0,
-      difference: parseFloat(row.difference) || 0,
-      salesRs: parseFloat(row.salesRs) || 0,
-      cash: parseFloat(row.cash) || 0,
-      cc: parseFloat(row.cc) || 0,
-      upi: parseFloat(row.upi) || 0,
-      notes500: parseInt(row.notes500) || 0,
-      notes200: parseInt(row.notes200) || 0,
-      notes100: parseInt(row.notes100) || 0,
-      notes50: parseInt(row.notes50) || 0,
-      notes20: parseInt(row.notes20) || 0,
-      notes10: parseInt(row.notes10) || 0,
-      coins5: parseInt(row.coins5) || 0,
-      coins2: parseInt(row.coins2) || 0,
-      coins1: parseInt(row.coins1) || 0,
-      hasNotes: !!row.hasNotes,
-      isOpeningAutoFilled: row.isOpeningAutoFilled || false,
-    })),
-    totals,
-    savedAt: now.toISOString(),
-    editWindowExpiry: editExpiry.toISOString(),
-    isLocked: false,
-    isSaved: true,
-    carryoverApplied: shiftData.carryoverApplied || false,
-    createdAt: shiftData.createdAt || now.toISOString(),
+export const saveShift = async (date, shiftNumber, shiftData) => {
+  const now = new Date().toISOString();
+  
+  // Clean totals to ensure proper types
+  const totals = {
+    totalDifference: parseFloat(shiftData.totals?.totalDifference || 0),
+    totalSalesRs: parseFloat(shiftData.totals?.totalSalesRs || 0),
+    totalCash: parseFloat(shiftData.totals?.totalCash || 0),
+    totalCC: parseFloat(shiftData.totals?.totalCC || 0),
+    totalUPI: parseFloat(shiftData.totals?.totalUPI || 0),
+    totalCashParty: parseFloat(shiftData.totals?.totalCashParty || 0),
   };
 
-  if (!records[date]) {
-    records[date] = {
-      date,
-      shifts: {},
-      shiftsCompleted: [],
-    };
-  }
+  const record = {
+    date,
+    shiftNumber: parseInt(shiftNumber),
+    price: parseFloat(shiftData.price || 0),
+    rows: shiftData.rows || [],
+    totals,
+    savedAt: now,
+    lastEditedAt: now,
+    isSynced: false,
+    isSaved: true,
+  };
 
-  records[date].shifts[`shift${shiftNum}`] = shiftDoc;
-  records[date].lastModifiedAt = now.toISOString();
-  if (!records[date].shiftsCompleted.includes(shiftNum)) {
-    records[date].shiftsCompleted.push(shiftNum);
-  }
-
-  saveAllRecords(records);
+  // Save locally first (instant)
+  await db.shifts.put(record);
 
   // Update calendar metadata
-  const calendarData = await getCalendarData();
-  if (!calendarData.includes(date)) {
-    calendarData.push(date);
-    localStorage.setItem(CALENDAR_KEY, JSON.stringify(calendarData));
-  }
+  await db.calendar.put({ date, hasData: true, updatedAt: now });
 
-  return shiftDoc;
+  // Queue for cloud sync
+  await queueSync('shifts', `${date}_${shiftNumber}`, {
+    date,
+    shift_number: parseInt(shiftNumber),
+    price: parseFloat(shiftData.price || 0),
+    rows: shiftData.rows || [],
+    totals,
+    last_edited_at: now,
+  });
+
+  return record;
 };
 
-export const forceUpdateCarryover = async (date, shiftNum, closingRows) => {
-  let nextDate = date;
-  let nextShiftNum = shiftNum + 1;
-
-  if (nextShiftNum > 3) {
-    const [year, month, day] = date.split('-').map(Number);
-    const d = new Date(year, month - 1, day);
-    d.setDate(d.getDate() + 1);
-    nextDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    nextShiftNum = 1;
+export const getShift = async (date, shiftNumber) => {
+  const result = await db.shifts.get([date, parseInt(shiftNumber)]);
+  if (result) {
+    return { ...result, isSaved: true };
   }
-
-  const records = loadAllRecords();
-  const nextShift = records[nextDate]?.shifts?.[`shift${nextShiftNum}`];
-
-  if (nextShift) {
-    const updatedRows = nextShift.rows.map((row, i) => ({
-      ...row,
-      openingReading: closingRows[i]?.closingReading ?? row.openingReading,
-      isOpeningAutoFilled: true,
-    }));
-    nextShift.rows = updatedRows;
-    nextShift.lastModifiedAt = new Date().toISOString();
-    saveAllRecords(records);
-    return true;
-  }
-  return false;
-};
-
-export const getCalendarData = async () => {
-  const data = localStorage.getItem(CALENDAR_KEY);
-  return data ? JSON.parse(data) : [];
+  return null;
 };
 
 export const getAllShiftsForDate = async (date) => {
-  const shifts = {};
-  for (let i = 1; i <= 3; i++) {
-    shifts[`shift${i}`] = await getShift(date, i);
-  }
-  return shifts;
+  const list = await db.shifts.where('date').equals(date).toArray();
+  // Return in a grouped format to match components' expectations
+  const shiftsObj = { shift1: null, shift2: null, shift3: null };
+  list.forEach((s) => {
+    shiftsObj[`shift${s.shiftNumber}`] = { ...s, isSaved: true };
+  });
+  return shiftsObj;
+};
+
+export const getDailyTotals = async (date) => {
+  const list = await db.shifts.where('date').equals(date).toArray();
+  return list.reduce(
+    (acc, shift) => ({
+      totalDifference: acc.totalDifference + (shift.totals?.totalDifference || 0),
+      totalSalesRs: acc.totalSalesRs + (shift.totals?.totalSalesRs || 0),
+      totalCash: acc.totalCash + (shift.totals?.totalCash || 0),
+      totalCC: acc.totalCC + (shift.totals?.totalCC || 0),
+      totalUPI: acc.totalUPI + (shift.totals?.totalUPI || 0),
+      totalCashParty: acc.totalCashParty + (shift.totals?.totalCashParty || 0),
+    }),
+    {
+      totalDifference: 0,
+      totalSalesRs: 0,
+      totalCash: 0,
+      totalCC: 0,
+      totalUPI: 0,
+      totalCashParty: 0,
+    }
+  );
+};
+
+export const getCalendarData = async () => {
+  const records = await db.calendar.toArray();
+  return records.filter((r) => r.hasData).map((r) => r.date);
 };
 
 export const getMonthlyData = async (year, month) => {
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
   const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
 
-  const records = loadAllRecords();
-  const monthlyRows = [];
+  // Fetch all shifts in that range
+  const shiftsInRange = await db.shifts
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .toArray();
 
-  for (const date of Object.keys(records)) {
-    if (date >= startDate && date <= endDate) {
-      const dayRecord = records[date];
-      const shifts = await getAllShiftsForDate(date);
-
-      let dayTotals = { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0 };
-      let allShiftsFilled = true;
-
-      for (let i = 1; i <= 3; i++) {
-        const shift = shifts[`shift${i}`];
-        if (shift?.totals) {
-          dayTotals.totalDifference += shift.totals.totalDifference || 0;
-          dayTotals.totalSalesRs += shift.totals.totalSalesRs || 0;
-          dayTotals.totalCash += shift.totals.totalCash || 0;
-          dayTotals.totalCC += shift.totals.totalCC || 0;
-          dayTotals.totalUPI += shift.totals.totalUPI || 0;
-        } else {
-          allShiftsFilled = false;
-        }
-      }
-
-      monthlyRows.push({
-        date,
-        ...dayTotals,
-        allShiftsFilled,
-      });
+  // Group by date
+  const groupedByDate = {};
+  shiftsInRange.forEach((shift) => {
+    if (!groupedByDate[shift.date]) {
+      groupedByDate[shift.date] = [];
     }
+    groupedByDate[shift.date].push(shift);
+  });
+
+  const monthlyRows = [];
+  const endDay = new Date(year, month, 0); // last day of month
+  const totalDays = endDay.getDate();
+
+  for (let day = 1; day <= totalDays; day++) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayShifts = groupedByDate[dateStr] || [];
+    
+    let dayTotals = {
+      totalDifference: 0,
+      totalSalesRs: 0,
+      totalCash: 0,
+      totalCC: 0,
+      totalUPI: 0,
+      totalCashParty: 0,
+    };
+    
+    // Check if shifts 1, 2, and 3 are saved
+    const s1 = dayShifts.find((s) => s.shiftNumber === 1);
+    const s2 = dayShifts.find((s) => s.shiftNumber === 2);
+    const s3 = dayShifts.find((s) => s.shiftNumber === 3);
+    const allShiftsFilled = !!s1 && !!s2 && !!s3;
+
+    dayShifts.forEach((shift) => {
+      if (shift.totals) {
+        dayTotals.totalDifference += shift.totals.totalDifference || 0;
+        dayTotals.totalSalesRs += shift.totals.totalSalesRs || 0;
+        dayTotals.totalCash += shift.totals.totalCash || 0;
+        dayTotals.totalCC += shift.totals.totalCC || 0;
+        dayTotals.totalUPI += shift.totals.totalUPI || 0;
+        dayTotals.totalCashParty += shift.totals.totalCashParty || 0;
+      }
+    });
+
+    monthlyRows.push({
+      date: dateStr,
+      ...dayTotals,
+      allShiftsFilled,
+    });
   }
 
   monthlyRows.sort((a, b) => a.date.localeCompare(b.date));
   return monthlyRows;
+};
+
+// Aliased exports for backwards-compatibility
+export const loadShiftData = getShift;
+export const saveShiftData = saveShift;
+export const loadCalendarMetadata = getCalendarData;
+export const forceUpdateCarryover = async () => {};
+
+export const isMonthFullyCompleted = async (year, month) => {
+  const data = await getMonthlyData(year, month);
+  return data.length > 0 && data.every((row) => row.allShiftsFilled);
+};
+
+export const getCompletedMonths = async () => {
+  const today = new Date(getTodayStr());
+  const cutoff = new Date(getCutoffDate());
+  const completed = [];
+
+  const d = new Date(cutoff);
+  d.setDate(1);
+  while (d <= today) {
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const isComplete = await isMonthFullyCompleted(year, month);
+    if (isComplete) {
+      completed.push({
+        value: `${year}-${String(month).padStart(2, '0')}`,
+        label: `${getMonthName(month)} ${year}`,
+        year,
+        month,
+      });
+    }
+    d.setMonth(d.getMonth() + 1);
+  }
+  return completed.reverse();
 };

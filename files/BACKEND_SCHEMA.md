@@ -1,360 +1,176 @@
 # Backend Schema Document
 ## DSR Manager — Gas Station Daily Sales Record Web App
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** June 2026  
-**Database:** Firebase Firestore (NoSQL)
+**Local DB:** Dexie.js (IndexedDB) | **Cloud DB:** Supabase (PostgreSQL)
 
 ---
 
-## 1. Overview
+## 1. Architecture Overview
 
-Firestore is a document-based NoSQL database. All data is organized into **collections** (like tables) containing **documents** (like rows), which can contain sub-collections or nested fields.
-
-### Design Principles
-- **One document per shift** → single read loads all row data for a shift
-- **Lightweight metadata document** → calendar highlighting without reading all records
-- **Batch writes** → save shift data + update metadata in one atomic operation
-- **Offline persistence** → Firestore IndexedDB cache enabled for read-only offline mode
-- **IST timestamps** → all `savedAt`, `editWindowExpiry`, `createdAt` stored as Firestore Timestamps in UTC, converted to IST in UI
-
----
-
-## 2. Collection Structure Map
+DSR Manager uses a **local-first** architecture:
+- All reads and writes go to **Dexie.js (IndexedDB)** first — instant, offline-capable
+- A background sync service pushes changes to **Supabase (PostgreSQL)** every 30 seconds when online
+- On app load, the latest cloud data is pulled to local (handles fresh installs or new devices)
+- PWA installation ensures IndexedDB data is preserved by the OS (not cleared with browser cache)
 
 ```
-Firestore Root
-├── /auth
-│   └── owner                        (document)
-│
-├── /config
-│   ├── settings                     (document)
-│   ├── nozzles                      (document)
-│   └── employees                    (document)
-│
-├── /metadata
-│   └── calendar                     (document)
-│
-├── /sessions
-│   └── {sessionId}                  (document)
-│
-└── /records
-    └── {YYYY-MM-DD}                 (document — one per date)
-        └── /shifts                  (sub-collection)
-            ├── shift1               (document)
-            ├── shift2               (document)
-            └── shift3               (document)
+User Action
+    │
+    ▼
+Dexie.js (IndexedDB) ──► Instant response to user
+    │
+    ▼
+syncQueue table ──► Background sync every 30s ──► Supabase (cloud)
 ```
 
 ---
 
-## 3. Collection: `/auth`
+## 2. Local Database — Dexie.js Schema
 
-### Document: `owner`
+### 2.1 Table: `auth`
+Stores single owner credentials.
 
-Stores the single owner's login credentials and security question.
+| Field | Type | Description |
+|-------|------|-------------|
+| id | String (PK) | Always `"owner"` |
+| username | String | Login username (`"Adani0510"`) |
+| passwordHash | String | bcrypt hash (10 rounds) |
+| securityQuestion | String | Custom security question |
+| securityAnswerHash | String | bcrypt hash of answer |
+| isFirstLogin | Boolean | True until security setup done |
+| updatedAt | String (ISO) | Last update timestamp (IST) |
 
-```
-/auth/owner
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `username` | String | Owner's login username | `"Adani0510"` |
-| `passwordHash` | String | bcrypt hash of password (10 rounds) | `"$2a$10$..."` |
-| `securityQuestion` | String | Custom security question text | `"What is my dog's name?"` |
-| `securityAnswerHash` | String | bcrypt hash of security answer | `"$2a$10$..."` |
-| `isFirstLogin` | Boolean | True until security question is set | `true` |
-| `createdAt` | Timestamp | Account creation time (IST→UTC) | `Timestamp` |
-| `updatedAt` | Timestamp | Last password/security update | `Timestamp` |
-
-**Full Document Example:**
+**Example:**
 ```json
 {
+  "id": "owner",
   "username": "Adani0510",
-  "passwordHash": "$2a$10$abcdefghijklmnopqrstuvwxyz1234567890abcdefghij",
+  "passwordHash": "$2a$10$...",
   "securityQuestion": "What is the name of my first nozzle?",
-  "securityAnswerHash": "$2a$10$abcdefghijklmnopqrstuvwxyz1234567890abcdefghij",
+  "securityAnswerHash": "$2a$10$...",
   "isFirstLogin": false,
-  "createdAt": "2026-06-09T06:00:00.000Z",
-  "updatedAt": "2026-06-09T06:30:00.000Z"
+  "updatedAt": "2026-06-09T06:30:00.000+05:30"
 }
 ```
 
-**Firestore Path:** `/auth/owner`  
-**Access:** Read on login attempt; Write on password/security update  
-**Security:** Readable by all (needed for login); writable only from trusted app code
-
 ---
 
-## 4. Collection: `/config`
+### 2.2 Table: `settings`
+Stores station settings and Supabase credentials.
 
-### Document: `settings`
+| Field | Type | Description |
+|-------|------|-------------|
+| id | String (PK) | Always `"main"` |
+| stationName | String | Display name (default: "Memnagar CNG") |
+| supabaseUrl | String | Owner's Supabase project URL |
+| supabaseKey | String | Supabase anon key |
+| updatedAt | String (ISO) | Last update timestamp |
 
-Global station settings.
-
-```
-/config/settings
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `stationName` | String | Display name of the station | `"Memnagar CNG"` |
-| `lastUpdatedAt` | Timestamp | Last time settings were changed | `Timestamp` |
-
-**Full Document Example:**
+**Example:**
 ```json
 {
+  "id": "main",
   "stationName": "Memnagar CNG",
-  "lastUpdatedAt": "2026-06-09T07:00:00.000Z"
+  "supabaseUrl": "https://xyz.supabase.co",
+  "supabaseKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "updatedAt": "2026-06-09T06:00:00.000+05:30"
 }
 ```
 
 ---
 
-### Document: `nozzles`
-
-Ordered list of all nozzles. Order of array = display order in grid.
-
-```
-/config/nozzles
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `list` | Array\<NozzleObject\> | Ordered list of nozzles | See below |
-| `updatedAt` | Timestamp | Last modification time | `Timestamp` |
-
-**NozzleObject:**
-```json
-{
-  "id": "nozzle_uuid_1",
-  "name": "N1",
-  "isActive": true,
-  "addedAt": "2026-06-09T06:00:00.000Z"
-}
-```
+### 2.3 Table: `nozzles`
+Ordered list of all nozzles (auto-increment id).
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | String | UUID (generated on creation) |
-| `name` | String | Display name (e.g., "N1", "CNG-01") |
-| `isActive` | Boolean | `false` = deleted, still shown in history as greyed |
-| `addedAt` | Timestamp | When nozzle was added |
+| id | String (UUID) | Unique identifier |
+| name | String | Display name (e.g., "N1", "CNG-02") |
+| isActive | Boolean | False = soft deleted |
+| order | Number | Display order (index in list) |
+| addedAt | String (ISO) | When added |
+| syncedAt | String (ISO) | Last sync to Supabase |
 
-**Full Document Example:**
+**Example:**
 ```json
-{
-  "list": [
-    { "id": "abc-001", "name": "N1", "isActive": true, "addedAt": "2026-06-09T06:00:00Z" },
-    { "id": "abc-002", "name": "N2", "isActive": true, "addedAt": "2026-06-09T06:00:00Z" },
-    { "id": "abc-003", "name": "N3", "isActive": false, "addedAt": "2026-06-09T06:00:00Z" }
-  ],
-  "updatedAt": "2026-06-10T10:00:00.000Z"
-}
+[
+  { "id": "abc-001", "name": "N1", "isActive": true, "order": 0, "addedAt": "2026-06-09T06:00:00Z" },
+  { "id": "abc-002", "name": "N2", "isActive": true, "order": 1, "addedAt": "2026-06-09T06:00:00Z" },
+  { "id": "abc-003", "name": "N3", "isActive": false, "order": 2, "addedAt": "2026-06-09T06:00:00Z" }
+]
 ```
 
-> Note: Nozzles are never hard-deleted from the list. `isActive: false` marks deletion. This preserves historical references.
+> Nozzles are never hard deleted. `isActive: false` preserves history.
 
 ---
 
-### Document: `employees`
-
-Ordered list of all employees.
-
-```
-/config/employees
-```
+### 2.4 Table: `employees`
+Same structure as nozzles (max 50).
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `list` | Array\<EmployeeObject\> | Ordered list of employees |
-| `updatedAt` | Timestamp | Last modification time |
-
-**EmployeeObject:**
-```json
-{
-  "id": "emp_uuid_1",
-  "name": "Ramesh Kumar",
-  "isActive": true,
-  "addedAt": "2026-06-09T06:00:00.000Z"
-}
-```
-
-**Full Document Example:**
-```json
-{
-  "list": [
-    { "id": "emp-001", "name": "Ramesh Kumar", "isActive": true, "addedAt": "2026-06-09T06:00:00Z" },
-    { "id": "emp-002", "name": "Suresh Patel", "isActive": true, "addedAt": "2026-06-09T06:00:00Z" },
-    { "id": "emp-003", "name": "Mahesh Shah", "isActive": false, "addedAt": "2026-06-09T06:00:00Z" }
-  ],
-  "updatedAt": "2026-06-10T10:00:00.000Z"
-}
-```
+| id | String (UUID) | Unique identifier |
+| name | String | Employee name |
+| isActive | Boolean | False = soft deleted |
+| order | Number | Display order |
+| addedAt | String (ISO) | When added |
+| syncedAt | String (ISO) | Last sync |
 
 ---
 
-## 5. Collection: `/metadata`
+### 2.5 Table: `shifts` ← Main Data Table
+Compound primary key: `[date + shiftNumber]`
 
-### Document: `calendar`
+| Field | Type | Description |
+|-------|------|-------------|
+| date | String (PK1) | YYYY-MM-DD |
+| shiftNumber | Number (PK2) | 1, 2, or 3 |
+| price | Number | Today's price per KG (₹, 2 decimal) |
+| rows | Array (JSON) | All row data (see RowObject below) |
+| totals | Object (JSON) | Auto-calculated column totals |
+| savedAt | String (ISO) | First save timestamp |
+| lastEditedAt | String (ISO) | Most recent save timestamp |
+| isSynced | Boolean | False if pending cloud sync |
 
-Lightweight document used to highlight dates on the calendar UI without loading all records.
-
-```
-/metadata/calendar
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `datesWithData` | Array\<String\> | ISO dates (YYYY-MM-DD) that have at least one saved shift | `["2026-06-09", "2026-06-10"]` |
-| `updatedAt` | Timestamp | Last update | `Timestamp` |
-
-**Full Document Example:**
-```json
-{
-  "datesWithData": [
-    "2026-06-09",
-    "2026-06-10",
-    "2026-06-11"
-  ],
-  "updatedAt": "2026-06-11T14:30:00.000Z"
-}
-```
-
-> This single document is read on every dashboard load. Keeps calendar rendering fast (1 read instead of 60 reads).
-
----
-
-## 6. Collection: `/sessions`
-
-### Document: `{sessionId}`
-
-Tracks active login sessions to detect second-device logins.
-
-```
-/sessions/{sessionId}
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `sessionId` | String | UUID generated on login | `"uuid-xyz-123"` |
-| `loginAt` | Timestamp | Login time (IST→UTC) | `Timestamp` |
-| `deviceInfo` | String | Browser user-agent (truncated) | `"Chrome/124 Windows"` |
-| `isActive` | Boolean | True = current active session | `true` |
-
-**Full Document Example:**
-```json
-{
-  "sessionId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-  "loginAt": "2026-06-09T06:00:00.000Z",
-  "deviceInfo": "Chrome/124 Windows NT 10.0",
-  "isActive": true
-}
-```
-
-**Logic:**
-- On login: check all `/sessions` documents with `isActive: true`
-  - If exists → second device → set that device to read-only
-  - New session → write new session document
-- On logout → set `isActive: false` on current session document
-
----
-
-## 7. Collection: `/records`
-
-### Document: `{YYYY-MM-DD}`
-
-One document per calendar date. Contains only top-level metadata. Actual shift data lives in the `shifts` sub-collection.
-
-```
-/records/2026-06-09
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `date` | String | YYYY-MM-DD format (also the document ID) | `"2026-06-09"` |
-| `createdAt` | Timestamp | When first shift was saved | `Timestamp` |
-| `lastModifiedAt` | Timestamp | When any shift was last saved | `Timestamp` |
-| `shiftsCompleted` | Array\<Number\> | Which shifts are saved (e.g., [1, 2]) | `[1, 2]` |
-
-**Full Document Example:**
-```json
-{
-  "date": "2026-06-09",
-  "createdAt": "2026-06-09T06:30:00.000Z",
-  "lastModifiedAt": "2026-06-09T18:45:00.000Z",
-  "shiftsCompleted": [1, 2]
-}
-```
-
----
-
-### Sub-collection: `/records/{date}/shifts`
-
-#### Document: `shift1` / `shift2` / `shift3`
-
-One document per shift per day. Contains all row data, price, totals, and lock metadata.
-
-```
-/records/2026-06-09/shifts/shift1
-```
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `shiftNumber` | Number | 1, 2, or 3 | `1` |
-| `date` | String | Parent date (YYYY-MM-DD) | `"2026-06-09"` |
-| `price` | Number | Today's price per KG (₹, 2 decimal) | `96.50` |
-| `rows` | Array\<RowObject\> | All data rows (max 15) | See below |
-| `totals` | TotalsObject | Auto-calculated column sums | See below |
-| `savedAt` | Timestamp | Last save time (UTC, shown as IST in UI) | `Timestamp` |
-| `editWindowExpiry` | Timestamp | savedAt + 48 hours | `Timestamp` |
-| `isLocked` | Boolean | True after edit window expires | `false` |
-| `isSaved` | Boolean | True once saved for first time | `true` |
-| `carryoverApplied` | Boolean | True if opening readings were auto-filled | `true` |
-| `createdAt` | Timestamp | When shift document was first created | `Timestamp` |
-
----
-
-#### RowObject Schema
+#### RowObject Schema (inside `rows` array)
 
 | Field | Type | Description | Constraints |
 |-------|------|-------------|------------|
-| `rowIndex` | Number | Row position (0-based, fixed) | 0–14 |
-| `nozzleId` | String | Reference to nozzle UUID | From `/config/nozzles` |
-| `nozzleName` | String | Snapshot of nozzle name at save time | Stored for history display |
-| `nozzleIsActive` | Boolean | Was nozzle active at save time | For greyed-out display |
-| `employeeId` | String | Reference to employee UUID | From `/config/employees` |
-| `employeeName` | String | Snapshot of employee name at save time | Stored for history display |
-| `employeeIsActive` | Boolean | Was employee active at save time | For greyed-out display |
-| `openingReading` | Number | Opening meter reading (2 decimal) | > 0 |
-| `closingReading` | Number | Closing meter reading (2 decimal) | > 0, ≥ openingReading |
-| `difference` | Number | closingReading - openingReading (2 decimal) | Auto-calculated |
-| `salesRs` | Number | difference × price (2 decimal) | Auto-calculated |
-| `cash` | Number | Cash payment amount (2 decimal) | ≥ 0 |
-| `cc` | Number | Credit card payment amount (2 decimal) | ≥ 0 |
-| `upi` | Number | UPI payment amount (2 decimal) | ≥ 0 |
-| `isOpeningAutoFilled` | Boolean | True if opening was auto-carried from previous shift | For UI italic display |
+| rowIndex | Number | Fixed position (0-based) | 0–14 |
+| nozzleId | String | Nozzle UUID reference | From nozzles table |
+| nozzleName | String | Snapshot at save time | For history display |
+| nozzleIsActive | Boolean | Was nozzle active at save | For greyed display |
+| employeeId | String | Employee UUID reference | From employees table |
+| employeeName | String | Snapshot at save time | For history display |
+| employeeIsActive | Boolean | Was employee active at save | For greyed display |
+| openingReading | Number | Meter opening reading | > 0, 2 decimal |
+| closingReading | Number | Meter closing reading | > 0, ≥ opening, 2 decimal |
+| difference | Number | closingReading - openingReading | Auto-calculated |
+| salesRs | Number | difference × price | Auto-calculated |
+| cash | Number | Cash payment | ≥ 0, 2 decimal |
+| cc | Number | Credit card payment | ≥ 0, 2 decimal |
+| upi | Number | UPI payment | ≥ 0, 2 decimal |
+| cashParty | Number | Cash Party (credit/deferred) | ≥ 0, 2 decimal |
+| isOpeningAutoFilled | Boolean | True if auto-carried from prev shift | UI italic display |
 
----
-
-#### TotalsObject Schema
+#### TotalsObject Schema (inside `totals` field)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `totalDifference` | Number | Sum of all row differences (KG) |
-| `totalSalesRs` | Number | Sum of all row sales amounts |
-| `totalCash` | Number | Sum of all row cash amounts |
-| `totalCC` | Number | Sum of all row CC amounts |
-| `totalUPI` | Number | Sum of all row UPI amounts |
-
----
+| totalDifference | Number | Sum of all row differences |
+| totalSalesRs | Number | Sum of all row sales |
+| totalCash | Number | Sum of all row cash |
+| totalCC | Number | Sum of all row CC |
+| totalUPI | Number | Sum of all row UPI |
+| totalCashParty | Number | Sum of all row cash party |
 
 #### Complete Shift Document Example
 
 ```json
 {
-  "shiftNumber": 1,
   "date": "2026-06-09",
+  "shiftNumber": 1,
   "price": 96.50,
   "rows": [
     {
@@ -370,8 +186,9 @@ One document per shift per day. Contains all row data, price, totals, and lock m
       "difference": 222.25,
       "salesRs": 21447.13,
       "cash": 10000.00,
-      "cc": 8000.00,
+      "cc": 5000.00,
       "upi": 3447.13,
+      "cashParty": 3000.00,
       "isOpeningAutoFilled": true
     },
     {
@@ -386,262 +203,261 @@ One document per shift per day. Contains all row data, price, totals, and lock m
       "closingReading": 9100.50,
       "difference": 199.50,
       "salesRs": 19253.25,
-      "cash": 10000.00,
+      "cash": 9000.00,
       "cc": 5000.00,
-      "upi": 4253.25,
+      "upi": 3253.25,
+      "cashParty": 2000.00,
       "isOpeningAutoFilled": true
     }
   ],
   "totals": {
     "totalDifference": 421.75,
     "totalSalesRs": 40700.38,
-    "totalCash": 20000.00,
-    "totalCC": 13000.00,
-    "totalUPI": 7700.38
+    "totalCash": 19000.00,
+    "totalCC": 10000.00,
+    "totalUPI": 6700.38,
+    "totalCashParty": 5000.00
   },
-  "savedAt": "2026-06-09T08:30:00.000Z",
-  "editWindowExpiry": "2026-06-11T23:59:00.000Z",
-  "isLocked": false,
-  "isSaved": true,
-  "carryoverApplied": true,
-  "createdAt": "2026-06-09T06:00:00.000Z"
+  "savedAt": "2026-06-09T08:30:00.000+05:30",
+  "lastEditedAt": "2026-06-09T08:30:00.000+05:30",
+  "isSynced": true
 }
 ```
 
 ---
 
-## 8. Firestore Indexes
+### 2.6 Table: `syncQueue`
+Tracks all local changes pending Supabase sync.
 
-Firestore auto-indexes all single-field queries. The following **composite indexes** are needed:
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Auto-increment | Queue entry ID |
+| tableName | String | Target Supabase table name |
+| recordId | String | Record identifier |
+| action | String | `"upsert"` or `"delete"` |
+| payload | Object (JSON) | Full record data to sync |
+| createdAt | String (ISO) | When queued |
 
-| Collection | Fields | Order | Purpose |
-|-----------|--------|-------|---------|
-| `/records` | `date` ASC | ASC | Query records older than cutoff for cleanup |
-| `/sessions` | `isActive` ASC, `loginAt` DESC | — | Find active sessions |
-
-> Create these in Firebase Console → Firestore → Indexes tab, or via `firestore.indexes.json`.
-
----
-
-## 9. Firestore Security Rules
-
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Auth — readable by all for login; not directly writable from client
-    match /auth/owner {
-      allow read: if true;
-      allow write: if false; // Managed via Admin SDK or trusted function
-    }
-
-    // Config — only authenticated session can read/write
-    match /config/{document} {
-      allow read, write: if isValidSession();
-    }
-
-    // Metadata — only authenticated session
-    match /metadata/{document} {
-      allow read, write: if isValidSession();
-    }
-
-    // Sessions — allow create on login; allow update/read for session check
-    match /sessions/{sessionId} {
-      allow read, write: if true; // Controlled at app level
-    }
-
-    // Records — only authenticated session
-    match /records/{date} {
-      allow read, write: if isValidSession();
-
-      match /shifts/{shiftId} {
-        allow read, write: if isValidSession();
-      }
-    }
-
-    // Helper: validate session via localStorage sessionId in request headers
-    // Note: Full enforcement requires Firebase Auth in v2
-    function isValidSession() {
-      return true; // App-level session check handles this in v1
-    }
-  }
+**Example:**
+```json
+{
+  "id": 47,
+  "tableName": "shifts",
+  "recordId": "2026-06-09_1",
+  "action": "upsert",
+  "payload": {
+    "date": "2026-06-09",
+    "shift_number": 1,
+    "price": 96.50,
+    "rows": [...],
+    "totals": {...},
+    "last_edited_at": "2026-06-09T08:30:00.000Z"
+  },
+  "createdAt": "2026-06-09T08:30:00.000+05:30"
 }
 ```
 
-> **V2 Note:** Migrate to Firebase Auth (anonymous or email) for true server-side enforcement. In v1, the app-level session check in `ProtectedRoute` + `AuthContext` provides adequate security for single-user use.
-
 ---
 
-## 10. Data Write Patterns
+### 2.7 Table: `calendar`
+Lightweight metadata for calendar dot indicators.
 
-### 10.1 Save a Shift (Batch Write)
-```javascript
-const batch = writeBatch(db);
+| Field | Type | Description |
+|-------|------|-------------|
+| date | String (PK) | YYYY-MM-DD |
+| hasData | Boolean | True if any shift saved for this date |
+| updatedAt | String (ISO) | Last update |
 
-// 1. Write shift document
-const shiftRef = doc(db, 'records', date, 'shifts', `shift${shiftNum}`);
-batch.set(shiftRef, shiftData);
-
-// 2. Update or create parent date document
-const dateRef = doc(db, 'records', date);
-batch.set(dateRef, {
-  date,
-  createdAt: serverTimestamp(),
-  lastModifiedAt: serverTimestamp(),
-  shiftsCompleted: arrayUnion(shiftNum),
-}, { merge: true });
-
-// 3. Update calendar metadata
-const calendarRef = doc(db, 'metadata', 'calendar');
-batch.set(calendarRef, {
-  datesWithData: arrayUnion(date),
-  updatedAt: serverTimestamp(),
-}, { merge: true });
-
-await batch.commit();
-```
-
-### 10.2 Force-Update Next Shift Carryover
-```javascript
-// Called after saving shiftN, to update shiftN+1 opening readings
-const nextShiftRef = doc(db, 'records', date, 'shifts', `shift${shiftNum + 1}`);
-const nextShiftSnap = await getDoc(nextShiftRef);
-
-if (nextShiftSnap.exists()) {
-  const nextShiftData = nextShiftSnap.data();
-  const updatedRows = nextShiftData.rows.map((row, i) => ({
-    ...row,
-    openingReading: savedShiftRows[i]?.closingReading ?? row.openingReading,
-    isOpeningAutoFilled: true,
-  }));
-  await updateDoc(nextShiftRef, { rows: updatedRows, lastModifiedAt: serverTimestamp() });
-}
-```
-
-### 10.3 Read Shift Data (Lazy Load)
-```javascript
-// Only fetch when user selects a date/shift tab
-const shiftRef = doc(db, 'records', date, 'shifts', `shift${shiftNum}`);
-const shiftSnap = await getDoc(shiftRef);
-return shiftSnap.exists() ? shiftSnap.data() : null;
-```
-
-### 10.4 Delete Old Records (Cleanup)
-```javascript
-const cutoff = new Date();
-cutoff.setDate(cutoff.getDate() - 60);
-const cutoffStr = cutoff.toISOString().split('T')[0];
-
-const q = query(collection(db, 'records'), where('date', '<', cutoffStr));
-const snap = await getDocs(q);
-
-const batch = writeBatch(db);
-snap.docs.forEach(d => batch.delete(d.ref));
-
-// Also clean up shifts sub-collections
-for (const dateDoc of snap.docs) {
-  const shiftsSnap = await getDocs(collection(db, 'records', dateDoc.id, 'shifts'));
-  shiftsSnap.docs.forEach(s => batch.delete(s.ref));
-}
-
-// Update calendar metadata
-const calendarRef = doc(db, 'metadata', 'calendar');
-const deletedDates = snap.docs.map(d => d.id);
-batch.update(calendarRef, { datesWithData: arrayRemove(...deletedDates) });
-
-await batch.commit();
+**Example:**
+```json
+[
+  { "date": "2026-06-09", "hasData": true, "updatedAt": "2026-06-09T08:30:00Z" },
+  { "date": "2026-06-10", "hasData": true, "updatedAt": "2026-06-10T08:15:00Z" }
+]
 ```
 
 ---
 
-## 11. Data Read Patterns Summary
+## 3. Cloud Database — Supabase Schema (PostgreSQL)
 
-| Operation | Documents Read | Frequency |
-|-----------|---------------|-----------|
-| App load / Login | `/metadata/calendar` | Every login |
-| Open a date | `/records/{date}`, `/records/{date}/shifts/shift{N}` | On date select |
-| Switch shift tab | `/records/{date}/shifts/shift{N}` | On tab click (if not cached) |
-| Load settings | `/config/settings`, `/config/nozzles`, `/config/employees` | Once per session |
-| Verify login | `/auth/owner` | On login attempt |
-| Check carryover | `/records/{prevDate}/shifts/shift3` | On new date open |
-| Monthly report | `/records/{date}` × ~30 docs | On month select |
-| Session check | `/sessions/{id}` | On login |
+Mirrors the local Dexie schema. Auto-created on first successful sync.
 
-**Estimated daily reads (typical usage):**
-- Login: ~5 reads
-- 3 shifts × 1 read each: 3 reads
-- Calendar metadata: 1 read
-- Settings: 3 reads
-- **Total per day: ~12–15 reads** (well within free tier limit of 50,000/day)
-
----
-
-## 12. Monthly Report Aggregation
-
-Monthly report data is computed client-side by fetching all date documents for the selected month and summing their shift totals.
-
-```javascript
-// Fetch all dates in month
-const startDate = `${year}-${month}-01`;
-const endDate = `${year}-${month}-31`;
-
-const q = query(
-  collection(db, 'records'),
-  where('date', '>=', startDate),
-  where('date', '<=', endDate)
+```sql
+-- Auth
+CREATE TABLE IF NOT EXISTS auth (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  security_question TEXT DEFAULT '',
+  security_answer_hash TEXT DEFAULT '',
+  is_first_login BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-const snap = await getDocs(q);
 
-// For each date, fetch all 3 shifts and sum totals
-const monthlyRows = [];
-for (const dateDoc of snap.docs) {
-  const shifts = await Promise.all([1, 2, 3].map(n =>
-    getDoc(doc(db, 'records', dateDoc.id, 'shifts', `shift${n}`))
-  ));
-  const dayTotals = shifts
-    .filter(s => s.exists())
-    .reduce((acc, s) => {
-      const t = s.data().totals;
-      return {
-        totalDifference: acc.totalDifference + t.totalDifference,
-        totalSalesRs: acc.totalSalesRs + t.totalSalesRs,
-        totalCash: acc.totalCash + t.totalCash,
-        totalCC: acc.totalCC + t.totalCC,
-        totalUPI: acc.totalUPI + t.totalUPI,
-      };
-    }, { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0 });
-  monthlyRows.push({ date: dateDoc.id, ...dayTotals });
-}
+-- Settings
+CREATE TABLE IF NOT EXISTS settings (
+  id TEXT PRIMARY KEY,
+  station_name TEXT DEFAULT 'Memnagar CNG',
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Nozzles
+CREATE TABLE IF NOT EXISTS nozzles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  display_order INTEGER NOT NULL,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Employees
+CREATE TABLE IF NOT EXISTS employees (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  display_order INTEGER NOT NULL,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Shifts (main data)
+CREATE TABLE IF NOT EXISTS shifts (
+  date TEXT NOT NULL,
+  shift_number INTEGER NOT NULL CHECK (shift_number IN (1,2,3)),
+  price DECIMAL(10,2) NOT NULL CHECK (price > 0),
+  rows JSONB NOT NULL DEFAULT '[]',
+  totals JSONB NOT NULL DEFAULT '{}',
+  saved_at TIMESTAMPTZ DEFAULT NOW(),
+  last_edited_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (date, shift_number)
+);
+
+-- Calendar metadata
+CREATE TABLE IF NOT EXISTS calendar (
+  date TEXT PRIMARY KEY,
+  has_data BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(date);
+CREATE INDEX IF NOT EXISTS idx_shifts_last_edited ON shifts(last_edited_at);
+CREATE INDEX IF NOT EXISTS idx_calendar_date ON calendar(date);
 ```
 
 ---
 
-## 13. Data Constraints Summary
+## 4. Reconciliation Constraint
+
+Per-row validation (enforced in app, not in DB):
+```
+Cash + CC + UPI + Cash Party = Sales in Rs.
+```
+
+Enforced in `validators.js` before every save. Blocks save if any row fails.
+
+---
+
+## 5. Carryover Data Flow
+
+```
+Shift 1 saved (rows[0..N] each have closingReading)
+    │
+    ▼
+Shift 2 opening readings = Shift 1 closing readings (by rowIndex)
+    │ rows[0].openingReading = Shift1.rows[0].closingReading
+    │ rows[1].openingReading = Shift1.rows[1].closingReading
+    │ ...
+    ▼
+Shift 3 opening readings = Shift 2 closing readings (same logic)
+    │
+    ▼
+Next Day Shift 1 opening readings = Today Shift 3 closing readings (same logic)
+```
+
+Carryover is stored in the `isOpeningAutoFilled: true` flag in each row.
+
+---
+
+## 6. Daily Sales Aggregation
+
+Daily totals are computed client-side in real-time:
+
+```javascript
+// getDailyTotals(date) — called after every shift save
+const shifts = await db.shifts.where('date').equals(date).toArray();
+const daily = shifts.reduce((acc, shift) => ({
+  totalDifference: acc.totalDifference + shift.totals.totalDifference,
+  totalSalesRs:    acc.totalSalesRs    + shift.totals.totalSalesRs,
+  totalCash:       acc.totalCash       + shift.totals.totalCash,
+  totalCC:         acc.totalCC         + shift.totals.totalCC,
+  totalUPI:        acc.totalUPI        + shift.totals.totalUPI,
+  totalCashParty:  acc.totalCashParty  + shift.totals.totalCashParty,
+}), { totalDifference:0, totalSalesRs:0, totalCash:0, totalCC:0, totalUPI:0, totalCashParty:0 });
+```
+
+---
+
+## 7. Monthly Summary Aggregation
+
+```javascript
+// getMonthlyTotals(year, month)
+const startDate = `${year}-${String(month).padStart(2,'0')}-01`;
+const endDate   = `${year}-${String(month).padStart(2,'0')}-31`;
+
+const shifts = await db.shifts
+  .where('date')
+  .between(startDate, endDate, true, true)
+  .toArray();
+
+// Group by date, sum all shifts per day, then collect per-day rows
+```
+
+---
+
+## 8. Data Cleanup (`cleanupService.js`)
+
+```javascript
+export const cleanOldRecords = async () => {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 60);
+  const cutoffStr = cutoff.toISOString().split('T')[0]; // YYYY-MM-DD
+
+  // Delete from Dexie
+  await db.shifts.where('date').below(cutoffStr).delete();
+  await db.calendar.where('date').below(cutoffStr).delete();
+
+  // Queue deletions for Supabase
+  const toDelete = await db.shifts.where('date').below(cutoffStr).primaryKeys();
+  for (const key of toDelete) {
+    await db.syncQueue.add({
+      tableName: 'shifts',
+      recordId: `${key[0]}_${key[1]}`,
+      action: 'delete',
+      payload: { date: key[0], shift_number: key[1] },
+      createdAt: new Date().toISOString(),
+    });
+  }
+};
+```
+
+---
+
+## 9. Data Constraints Summary
 
 | Entity | Constraint | Value |
 |--------|-----------|-------|
-| Nozzles per station | Maximum | 15 |
-| Employees per station | Maximum | 50 |
-| Rows per shift | Maximum | 15 (matches max nozzles) |
+| Nozzles per station | Max | 15 |
+| Employees per station | Max | 50 |
+| Rows per shift | Max | 15 |
 | Shifts per day | Fixed | 3 |
-| Decimal places | Readings + Price + Calculations | 2 |
+| Decimal places | All numeric fields | 2 |
 | Data retention | Auto-delete after | 60 days |
-| Edit window | Hours from last save | 48 hours |
-| Opening Reading | Minimum | > 0 |
-| Closing Reading | Minimum | > 0 and ≥ Opening |
-| Cash / CC / UPI | Minimum | ≥ 0 |
-| Today's Price | Minimum | > 0 |
-| Reconciliation | Per row | Cash + CC + UPI = Sales |
-
----
-
-## 14. Backup & Recovery
-
-- **Primary storage:** Firebase Firestore (managed, replicated by Google)
-- **Offline cache:** Firestore IndexedDB persistence (browser-local)
-- **Manual backup:** Owner can export daily DSR as Excel and monthly as PDF
-- **No automated backup beyond Firestore** in v1
-- **Recovery from accidental data loss:** Contact Firebase support (point-in-time recovery available on paid plans)
-
-> **V2 Recommendation:** Enable Firestore PITR (Point-in-Time Recovery) on the Blaze plan for production use with critical financial data.
+| Opening Reading | Min | > 0 |
+| Closing Reading | Min | > 0, ≥ Opening |
+| Cash / CC / UPI / Cash Party | Min | ≥ 0 |
+| Today's Price | Min | > 0 |
+| Reconciliation | Per row | Cash + CC + UPI + CashParty = Sales |
+| Sync frequency | When online | Every 30 seconds |
+| No edit lock | Policy | Any record editable at any time |

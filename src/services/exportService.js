@@ -12,7 +12,7 @@ export const exportDSR = (date, shift1, shift2, shift3, stationName) => {
       [stationName],
       [`Date: ${formatDisplayDate(date)}`],
       [],
-      ['Nozzle', 'Employee', 'Opening Reading', 'Closing Reading', 'Difference (KG)', 'Sales (₹)', 'CC', 'UPI', 'Cash'],
+      ['Nozzle', 'Employee', 'Opening Reading', 'Closing Reading', 'Difference (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Cash Party'],
       ...shift.rows.map((r) => [
         r.nozzleName,
         r.employeeName,
@@ -20,17 +20,19 @@ export const exportDSR = (date, shift1, shift2, shift3, stationName) => {
         r.closingReading,
         r.difference,
         r.salesRs,
+        r.cash,
         r.cc,
         r.upi,
-        r.cash,
+        r.cashParty,
       ]),
       [
         'TOTAL', '', '', '',
         shift.totals.totalDifference,
         shift.totals.totalSalesRs,
+        shift.totals.totalCash,
         shift.totals.totalCC,
         shift.totals.totalUPI,
-        shift.totals.totalCash,
+        shift.totals.totalCashParty,
       ],
     ];
 
@@ -39,7 +41,7 @@ export const exportDSR = (date, shift1, shift2, shift3, stationName) => {
     // Set column widths
     ws['!cols'] = [
       { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 16 },
-      { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 },
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, shiftName);
@@ -59,22 +61,24 @@ export const exportMonthlyPDF = (monthName, year, rows, grandTotals, stationName
 
   autoTable(pdfDoc, {
     startY: 30,
-    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'CC', 'UPI', 'Cash']],
+    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Cash Party']],
     body: rows.map((r) => [
       formatDisplayDate(r.date),
       r.totalDifference.toFixed(2),
       r.totalSalesRs.toFixed(2),
+      r.totalCash.toFixed(2),
       r.totalCC.toFixed(2),
       r.totalUPI.toFixed(2),
-      r.totalCash.toFixed(2),
+      r.totalCashParty.toFixed(2),
     ]),
     foot: [[
       'TOTAL',
       grandTotals.totalDifference.toFixed(2),
       grandTotals.totalSalesRs.toFixed(2),
+      grandTotals.totalCash.toFixed(2),
       grandTotals.totalCC.toFixed(2),
       grandTotals.totalUPI.toFixed(2),
-      grandTotals.totalCash.toFixed(2),
+      grandTotals.totalCashParty.toFixed(2),
     ]],
     theme: 'striped',
     headStyles: { fillColor: [0, 48, 135] },

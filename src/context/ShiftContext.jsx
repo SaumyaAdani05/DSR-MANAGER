@@ -36,8 +36,8 @@ export const ShiftProvider = ({ children }) => {
   const loadCalendar = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
-      const meta = await loadCalendarMetadata();
-      setDatesWithData(meta?.datesWithData ?? []);
+      const dates = await loadCalendarMetadata();
+      setDatesWithData(dates ?? []);
     } catch (err) {
       console.error('Failed to load calendar metadata:', err);
     }

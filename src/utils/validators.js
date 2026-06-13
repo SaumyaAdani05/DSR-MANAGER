@@ -15,11 +15,14 @@ export const validateRow = (row, rowIndex) => {
   if (row.cash < 0) errors.push({ field: 'Cash', message: 'Cash cannot be negative' });
   if (row.cc < 0) errors.push({ field: 'CC', message: 'CC cannot be negative' });
   if (row.upi < 0) errors.push({ field: 'UPI', message: 'UPI cannot be negative' });
-  if (row.salesRs > 0 && !isReconciled(row))
+  if (row.cashParty < 0) errors.push({ field: 'Cash Party', message: 'Cash Party cannot be negative' });
+  if (row.salesRs > 0 && !isReconciled(row)) {
+    const totalPayments = (row.cash || 0) + (row.cc || 0) + (row.upi || 0) + (row.cashParty || 0);
     errors.push({
       field: 'Reconciliation',
-      message: `Cash + CC + UPI (${(row.cash + row.cc + row.upi).toFixed(2)}) ≠ Sales (${row.salesRs.toFixed(2)})`,
+      message: `Cash + CC + UPI + Cash Party (${totalPayments.toFixed(2)}) ≠ Sales (${row.salesRs.toFixed(2)})`,
     });
+  }
 
   return errors.length > 0 ? { rowIndex: rowIndex + 1, nozzle: row.nozzleName || `Row ${rowIndex + 1}`, errors } : null;
 };

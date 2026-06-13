@@ -1,46 +1,23 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { SESSION_KEY } from '../utils/constants';
-
-const OWNER_KEY = 'dsr_owner';
-
-// Helper to get or initialize owner (self-seeding)
-const getOrInitializeOwner = () => {
-  const owner = localStorage.getItem(OWNER_KEY);
-  if (!owner) {
-    // Seed default owner: username 'Adani0510', password 'Adani@mem0510'
-    const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync('Adani@mem0510', salt);
-    const defaultOwner = {
-      username: 'Adani0510',
-      passwordHash,
-      securityQuestion: '',
-      securityAnswerHash: '',
-      isFirstLogin: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    localStorage.setItem(OWNER_KEY, JSON.stringify(defaultOwner));
-    return defaultOwner;
-  }
-  return JSON.parse(owner);
-};
-
-const saveOwner = (ownerData) => {
-  localStorage.setItem(OWNER_KEY, JSON.stringify({
-    ...ownerData,
-    updatedAt: new Date().toISOString()
-  }));
-};
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
 
 export const loginOwner = async (username, password) => {
-  const ownerData = getOrInitializeOwner();
-
-  if (ownerData.username !== username) {
+  // Try to load owner details from Dexie. If Dexie hasn't finished seeding, retry
+  let owner = await db.auth.get('owner');
+  if (!owner) {
+    // Wait briefly and try again, in case db populate is in progress
+    await new Promise(resolve => setTimeout(resolve, 300));
+    owner = await db.auth.get('owner');
+  }
+  
+  if (!owner || owner.username !== username) {
     throw new Error('Invalid username or password');
   }
 
-  const isMatch = await bcrypt.compare(password, ownerData.passwordHash);
+  const isMatch = await bcrypt.compare(password, owner.passwordHash);
   if (!isMatch) {
     throw new Error('Invalid username or password');
   }
@@ -50,7 +27,7 @@ export const loginOwner = async (username, password) => {
     isAuthenticated: true,
     sessionId,
     loginTime: new Date().toISOString(),
-    isFirstLogin: ownerData.isFirstLogin || false,
+    isFirstLogin: owner.isFirstLogin || false,
   };
 
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -71,7 +48,7 @@ export const getSession = () => {
 };
 
 export const getOwnerData = async () => {
-  return getOrInitializeOwner();
+  return db.auth.get('owner');
 };
 
 export const verifyUsername = async (username) => {
@@ -110,24 +87,35 @@ export const updatePassword = async (currentPassword, newPassword) => {
   }
 
   const newHash = await bcrypt.hash(newPassword, 10);
-  ownerData.passwordHash = newHash;
-  saveOwner(ownerData);
+  const updatedAt = new Date().toISOString();
+  await db.auth.update('owner', { passwordHash: newHash, updatedAt });
+  await queueSync('auth', 'owner', { id: 'owner', password_hash: newHash, updated_at: updatedAt });
 };
 
 export const resetPassword = async (newPassword) => {
-  const ownerData = await getOwnerData();
   const newHash = await bcrypt.hash(newPassword, 10);
-  ownerData.passwordHash = newHash;
-  saveOwner(ownerData);
+  const updatedAt = new Date().toISOString();
+  await db.auth.update('owner', { passwordHash: newHash, updatedAt });
+  await queueSync('auth', 'owner', { id: 'owner', password_hash: newHash, updated_at: updatedAt });
 };
 
 export const updateSecurityQuestion = async (question, answer) => {
   const answerHash = await bcrypt.hash(answer.toLowerCase().trim(), 10);
-  const ownerData = await getOwnerData();
-  ownerData.securityQuestion = question;
-  ownerData.securityAnswerHash = answerHash;
-  ownerData.isFirstLogin = false;
-  saveOwner(ownerData);
+  const updatedAt = new Date().toISOString();
+  await db.auth.update('owner', {
+    securityQuestion: question,
+    securityAnswerHash: answerHash,
+    isFirstLogin: false,
+    updatedAt,
+  });
+
+  await queueSync('auth', 'owner', {
+    id: 'owner',
+    security_question: question,
+    security_answer_hash: answerHash,
+    is_first_login: false,
+    updated_at: updatedAt,
+  });
 
   // Update session to reflect first login completed
   const session = getSession();
@@ -137,7 +125,11 @@ export const updateSecurityQuestion = async (question, answer) => {
   }
 };
 
-export const skipSecuritySetup = () => {
+export const skipSecuritySetup = async () => {
+  const updatedAt = new Date().toISOString();
+  await db.auth.update('owner', { isFirstLogin: false, updatedAt });
+  await queueSync('auth', 'owner', { id: 'owner', is_first_login: false, updated_at: updatedAt });
+
   const session = getSession();
   if (session) {
     session.isFirstLogin = false;

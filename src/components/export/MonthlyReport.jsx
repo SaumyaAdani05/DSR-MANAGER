@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { getMonthlyData } from '../../services/shiftService';
+import { getMonthlyData, getCompletedMonths } from '../../services/shiftService';
 import { exportMonthlyPDF } from '../../services/exportService';
 import { formatDisplayDate, formatNumber, getMonthName } from '../../utils/formatters';
 import { getTodayStr, getCutoffDate } from '../../utils/dateUtils';
@@ -17,25 +17,16 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
   // Build list of available months within retention
   useEffect(() => {
     if (!isOpen) return;
-    const today = new Date(getTodayStr());
-    const cutoff = new Date(getCutoffDate());
-    const months = [];
-
-    const d = new Date(cutoff);
-    d.setDate(1);
-    while (d <= today) {
-      const year = d.getFullYear();
-      const month = d.getMonth() + 1;
-      months.push({
-        value: `${year}-${String(month).padStart(2, '0')}`,
-        label: `${getMonthName(month)} ${year}`,
-        year,
-        month,
-      });
-      d.setMonth(d.getMonth() + 1);
-    }
-
-    setAvailableMonths(months.reverse());
+    const loadCompletedMonths = async () => {
+      try {
+        const completed = await getCompletedMonths();
+        setAvailableMonths(completed);
+      } catch (err) {
+        console.error('Failed to load completed months:', err);
+        toast.error('Failed to load completed months');
+      }
+    };
+    loadCompletedMonths();
   }, [isOpen]);
 
   const handleMonthSelect = async (monthValue) => {
@@ -59,8 +50,9 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
           totalCash: acc.totalCash + r.totalCash,
           totalCC: acc.totalCC + r.totalCC,
           totalUPI: acc.totalUPI + r.totalUPI,
+          totalCashParty: acc.totalCashParty + r.totalCashParty,
         }),
-        { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0 }
+        { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0, totalCashParty: 0 }
       );
       setGrandTotals(totals);
     } catch (error) {
@@ -113,9 +105,10 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                   <th className="px-3 py-2 text-left font-semibold">Date</th>
                   <th className="px-3 py-2 text-right font-semibold">Diff (KG)</th>
                   <th className="px-3 py-2 text-right font-semibold">Sales (₹)</th>
+                  <th className="px-3 py-2 text-right font-semibold">Cash</th>
                   <th className="px-3 py-2 text-right font-semibold">CC</th>
                   <th className="px-3 py-2 text-right font-semibold">UPI</th>
-                  <th className="px-3 py-2 text-right font-semibold">Cash</th>
+                  <th className="px-3 py-2 text-right font-semibold">Cash Party</th>
                 </tr>
               </thead>
               <tbody>
@@ -124,9 +117,10 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                     <td className="px-3 py-2">{formatDisplayDate(row.date)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalDifference)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalSalesRs)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(row.totalCash)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalCC)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalUPI)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.totalCash)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(row.totalCashParty)}</td>
                   </tr>
                 ))}
                 {grandTotals && (
@@ -134,9 +128,10 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                     <td className="px-3 py-2 text-adani-navy">TOTAL</td>
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalDifference)}</td>
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalSalesRs)}</td>
+                    <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCash)}</td>
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCC)}</td>
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalUPI)}</td>
-                    <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCash)}</td>
+                    <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCashParty)}</td>
                   </tr>
                 )}
               </tbody>
