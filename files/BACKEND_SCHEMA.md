@@ -226,7 +226,109 @@ Compound primary key: `[date + shiftNumber]`
 
 ---
 
-### 2.6 Table: `syncQueue`
+### 2.6 Table: `attendanceSettings`
+Single document storing the global per shift wage.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | String | Always `"main"` |
+| perShiftWage | Number | Per shift wage in ₹ (2 decimal) |
+| updatedAt | String (ISO) | Last update |
+
+**Example:**
+```json
+{ "id": "main", "perShiftWage": 300.00, "updatedAt": "2026-06-01T06:00:00Z" }
+```
+
+---
+
+### 2.7 Table: `attendance`
+One record per employee per shift per day. Auto-marked on shift save.
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| date | String (PK1) | YYYY-MM-DD | From shift |
+| shiftNumber | Number (PK2) | 1, 2, or 3 | From shift |
+| employeeId | String (PK3) | Employee UUID | Compound PK |
+| employeeName | String | Snapshot of name | For display |
+| syncedAt | String (ISO) | Last sync | |
+
+> Compound key `[date + shiftNumber + employeeId]` — same employee in multiple rows of same shift recorded only once (upsert is idempotent).
+
+**Example:**
+```json
+[
+  { "date": "2026-06-09", "shiftNumber": 1, "employeeId": "emp-001", "employeeName": "Ramesh Kumar" },
+  { "date": "2026-06-09", "shiftNumber": 2, "employeeId": "emp-001", "employeeName": "Ramesh Kumar" },
+  { "date": "2026-06-09", "shiftNumber": 1, "employeeId": "emp-002", "employeeName": "Suresh Patel" }
+]
+```
+
+---
+
+### 2.8 Table: `advances`
+One record per advance given to an employee.
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| id | String (UUID) | Unique ID | Auto-generated |
+| employeeId | String | Employee UUID | From employees table |
+| employeeName | String | Snapshot at save | For display |
+| amount | Number | Advance amount (₹) | > 0, 2 decimal |
+| date | String | YYYY-MM-DD given date | |
+| note | String | Optional note | Can be empty |
+| syncedAt | String (ISO) | Last sync | |
+
+**Example:**
+```json
+[
+  { "id": "adv-001", "employeeId": "emp-001", "employeeName": "Ramesh Kumar", "amount": 500.00, "date": "2026-06-09", "note": "medical expense" },
+  { "id": "adv-002", "employeeId": "emp-001", "employeeName": "Ramesh Kumar", "amount": 1000.00, "date": "2026-06-15", "note": "" }
+]
+```
+
+---
+
+### 2.9 Table: `salaryPayments`
+One record per employee per pay period.
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| id | String (UUID) | Unique ID | |
+| employeeId | String | Employee UUID | |
+| employeeName | String | Snapshot at save | |
+| periodStart | String | YYYY-MM-DD | Start of pay period |
+| periodEnd | String | YYYY-MM-DD | End of pay period |
+| totalShifts | Number | Total shifts worked | Calculated |
+| totalWage | Number | totalShifts × perShiftWage | 2 decimal |
+| advanceGiven | Number | Total advances in period | 2 decimal |
+| deductionAmount | Number | Owner-set deduction amount | 2 decimal; can exceed wage |
+| netPayable | Number | totalWage − deductionAmount | Can be negative |
+| status | String | `"remaining"` / `"paid"` | Default: remaining |
+| paidAt | String (ISO) | Payment timestamp | Null if unpaid |
+| syncedAt | String (ISO) | Last sync | |
+
+**Example:**
+```json
+{
+  "id": "pay-001",
+  "employeeId": "emp-001",
+  "employeeName": "Ramesh Kumar",
+  "periodStart": "2026-06-01",
+  "periodEnd": "2026-06-30",
+  "totalShifts": 8,
+  "totalWage": 2400.00,
+  "advanceGiven": 1500.00,
+  "deductionAmount": 500.00,
+  "netPayable": 1900.00,
+  "status": "paid",
+  "paidAt": "2026-07-01T10:00:00.000+05:30"
+}
+```
+
+---
+
+### 2.10 Table: `syncQueue`
 Tracks all local changes pending Supabase sync.
 
 | Field | Type | Description |
@@ -259,7 +361,87 @@ Tracks all local changes pending Supabase sync.
 
 ---
 
-### 2.7 Table: `calendar`
+### 2.11 Table: `parties`
+Same structure as employees. Managed from Party Management page.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | String (UUID) | Unique identifier |
+| name | String | Party display name |
+| isActive | Boolean | False = soft deleted |
+| order | Number | Display order |
+| addedAt | String (ISO) | When added |
+| syncedAt | String (ISO) | Last sync |
+
+**Example:**
+```json
+[
+  { "id": "party-001", "name": "Ramesh Trucking", "isActive": true, "order": 0, "addedAt": "2026-06-01T06:00:00Z" },
+  { "id": "party-002", "name": "Gujarat Transport Co.", "isActive": true, "order": 1, "addedAt": "2026-06-01T06:00:00Z" }
+]
+```
+
+---
+
+### 2.12 Table: `cashPartyEntries`
+One record per Cash Party transaction (per row in a saved shift).
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| id | String (UUID) | Unique entry ID | Auto-generated |
+| date | String | YYYY-MM-DD | From shift |
+| shiftNumber | Number | 1, 2, or 3 | From shift |
+| rowIndex | Number | Row position in shift | 0-based |
+| partyId | String | Party UUID reference | From parties table |
+| partyName | String | Snapshot of party name | For history display |
+| diffKg | Number | Difference KG for this row | 2 decimal |
+| salesRs | Number | Sales amount for this row | 2 decimal |
+| cashPartyAmount | Number | Cash Party amount | > 0, 2 decimal |
+| status | String | `"pending"` / `"partial"` / `"paid"` | Default: pending |
+| amountPaid | Number | Total amount paid so far | ≥ 0, 2 decimal |
+| paymentDate | String (ISO) | Date of last payment | Null if unpaid |
+| billNumber | String | Auto-generated (BILL-001) | Sequential global |
+| syncedAt | String (ISO) | Last sync timestamp | |
+
+**Example:**
+```json
+{
+  "id": "entry-uuid-001",
+  "date": "2026-06-09",
+  "shiftNumber": 1,
+  "rowIndex": 0,
+  "partyId": "party-001",
+  "partyName": "Ramesh Trucking",
+  "diffKg": 120.50,
+  "salesRs": 11628.25,
+  "cashPartyAmount": 8000.00,
+  "status": "partial",
+  "amountPaid": 3500.00,
+  "paymentDate": "2026-06-05T10:30:00.000+05:30",
+  "billNumber": "BILL-042",
+  "syncedAt": "2026-06-09T08:35:00.000Z"
+}
+```
+
+---
+
+### 2.13 Table: `billCounter`
+Single document tracking the global bill number sequence.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | String | Always `"main"` |
+| lastNumber | Number | Last used bill number (e.g., 42) |
+| updatedAt | String (ISO) | Last update |
+
+**Example:**
+```json
+{ "id": "main", "lastNumber": 42, "updatedAt": "2026-06-09T08:30:00Z" }
+```
+
+---
+
+### 2.14 Table: `calendar`
 Lightweight metadata for calendar dot indicators.
 
 | Field | Type | Description |
@@ -340,10 +522,59 @@ CREATE TABLE IF NOT EXISTS calendar (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Attendance settings
+CREATE TABLE IF NOT EXISTS attendance_settings (
+  id TEXT PRIMARY KEY,
+  per_shift_wage DECIMAL(10,2) DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Attendance records
+CREATE TABLE IF NOT EXISTS attendance (
+  date TEXT NOT NULL,
+  shift_number INTEGER NOT NULL,
+  employee_id TEXT NOT NULL,
+  employee_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (date, shift_number, employee_id)
+);
+
+-- Advances
+CREATE TABLE IF NOT EXISTS advances (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  employee_name TEXT NOT NULL,
+  amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+  date TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Salary payments
+CREATE TABLE IF NOT EXISTS salary_payments (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  employee_name TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  total_shifts INTEGER NOT NULL DEFAULT 0,
+  total_wage DECIMAL(10,2) NOT NULL DEFAULT 0,
+  advance_given DECIMAL(10,2) NOT NULL DEFAULT 0,
+  deduction_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  net_payable DECIMAL(10,2) NOT NULL DEFAULT 0,
+  status TEXT DEFAULT 'remaining',
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(date);
 CREATE INDEX IF NOT EXISTS idx_shifts_last_edited ON shifts(last_edited_at);
 CREATE INDEX IF NOT EXISTS idx_calendar_date ON calendar(date);
+CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
+CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance(employee_id);
+CREATE INDEX IF NOT EXISTS idx_advances_employee ON advances(employee_id);
+CREATE INDEX IF NOT EXISTS idx_salary_payments_employee ON salary_payments(employee_id);
 ```
 
 ---
@@ -459,5 +690,15 @@ export const cleanOldRecords = async () => {
 | Cash / CC / UPI / Cash Party | Min | ≥ 0 |
 | Today's Price | Min | > 0 |
 | Reconciliation | Per row | Cash + CC + UPI + CashParty = Sales |
+| Party name | Required when | Cash Party amount > 0 |
+| Bill number | Format | BILL-001, BILL-002 (sequential global) |
+| Payment status | Values | `pending` / `partial` / `paid` |
+| Amount paid | Min/Max | ≥ 0 and ≤ cashPartyAmount |
+| Attendance | Auto-marked | On shift save per unique employee per shift |
+| Attendance dedup | Rule | Same employee in multiple rows of same shift = 1 record |
+| Per shift wage | Scope | Single global value for all employees |
+| Advance amount | Min | > 0 |
+| Net payable | Rule | totalWage − deductionAmount (can be negative) |
+| Salary status | Values | `remaining` / `paid` |
 | Sync frequency | When online | Every 30 seconds |
 | No edit lock | Policy | Any record editable at any time |

@@ -302,7 +302,230 @@ Hamburger → Monthly Report
 
 ---
 
-## 9. Sync Flow
+## 9. Cash Party Popup Flow
+
+```
+Owner enters Cash Party amount > 0 in a row
+   │
+   └── Popup appears immediately:
+            │
+            ├── Searchable party dropdown
+            ├── Owner selects party name
+            ├── Popup auto-closes
+            └── Party name shown as badge below Cash Party amount in row
+                     │
+                     └── On shift Save:
+                              ├── Cash Party entry saved to Dexie (cashPartyEntries table)
+                              ├── Auto bill number assigned (BILL-XXX)
+                              ├── Status set to "Pending"
+                              └── Queued for Supabase sync
+```
+
+---
+
+## 11. Attendance Section Flow
+
+### 11.1 Attendance Auto-Mark (triggered on shift save)
+```
+Owner saves Shift N
+   │
+   └── shiftService.saveShift() completes
+            │
+            └── attendanceService.markAttendanceFromShift(date, shiftNumber, rows)
+                     │
+                     ├── Extract unique employee IDs from saved rows
+                     │   (dedup: same employee in multiple rows of same shift = 1 entry)
+                     │
+                     ├── For each unique employee:
+                     │        └── db.attendance.put({ date, shiftNumber, employeeId, employeeName })
+                     │            (upsert — re-saving same shift is idempotent)
+                     │
+                     └── Queue each attendance record for Supabase sync
+```
+
+### 11.2 Attendance Landing Page
+```
+Hamburger → Attendance
+   │
+   ├── Show Per Shift Wage input (₹) — editable inline, saves on blur
+   ├── Date range picker (Start Date → End Date) or "Select Month" shortcut
+   ├── Click "Load Register"
+   │
+   └── Fetch attendance records for range → build register
+            │
+            └── Display traditional register:
+                     Rows: all employees who worked at least once in range
+                     Columns: each date in range (day number as header)
+                     Cells: shift numbers worked (e.g., "1", "1,2", "1,2,3") or blank
+                     Last columns: Shifts | Wage | Advance | Deduction | Net | Status | Pay
+```
+
+### 11.3 Add Advance Flow
+```
+Attendance page → "Add Advance" button (per employee row)
+   │
+   └── Popup appears:
+            ├── Employee name (pre-filled, read-only)
+            ├── Amount (₹) input
+            ├── Date input (default today)
+            ├── Note (optional text)
+            ├── [Save Advance] button
+            │
+            └── On save:
+                     ├── Write to Dexie advances table
+                     ├── Queue Supabase sync
+                     ├── Register recalculates: Advance Given + Deduction + Net Payable
+                     └── Toast: "Advance recorded for [employee name]"
+```
+
+### 11.4 Set Deduction Amount Flow
+```
+Attendance register → Deduction column (per employee row)
+   │
+   ├── Editable number input per employee per period
+   ├── Owner enters deduction amount (how much advance to deduct this period)
+   ├── On blur:
+   │        ├── Save deduction to salaryPayments record
+   │        ├── Recalculate Net Payable = Total Wage − Deduction
+   │        └── If Net Payable < 0 → show value in red (allowed)
+   └── Queue Supabase sync
+```
+
+### 11.5 Pay Now Flow
+```
+Attendance register → "Pay Now" button (per employee)
+   │
+   └── Confirmation popup:
+            ├── Employee: [name]
+            ├── Period: [start] to [end]
+            ├── Total Shifts: X
+            ├── Total Wage: ₹X
+            ├── Advance / Deduction: ₹X
+            ├── Net Payable: ₹X (red if negative)
+            ├── Payment Date: [today — editable]
+            ├── [Confirm Payment] [Cancel]
+            │
+            └── On confirm:
+                     ├── Write to salaryPayments (status: 'paid', paidAt: now)
+                     ├── Queue Supabase sync
+                     ├── Status badge → "PAID ✓"
+                     └── Toast: "Salary paid for [employee name]"
+```
+
+### 11.6 Employee Profile / Advance History Flow
+```
+Attendance register → click employee name
+   │
+   └── Employee Profile Page:
+            ├── Employee name header
+            ├── Advance History table:
+            │        Date | Amount | Note | Running Total
+            │        (all advances for this employee, newest first)
+            │
+            ├── Salary Payment History:
+            │        Period | Shifts | Wage | Deduction | Net | Status | Paid Date
+            │
+            └── Outstanding Advance Balance:
+                     Total Advances Given − Total Deducted So Far
+```
+
+### 11.7 Attendance Export Flow
+```
+Attendance page → "Export PDF" or "Export Excel" button
+   │
+   ├── Uses currently loaded date range
+   ├── Export PDF:
+   │        └── Traditional register (landscape), station name header
+   │            Filename: Attendance_DDMMYYYY_DDMMYYYY.pdf
+   │
+   └── Export Excel:
+            └── Traditional register layout (employees × dates)
+                Filename: Attendance_DDMMYYYY.xlsx
+```
+
+---
+
+## 12. Bills Section Flow
+
+### 10.1 Bills Landing Page
+```
+Hamburger → Bills
+   │
+   ├── Load all active parties from Dexie
+   ├── For each party: calculate total outstanding (cashPartyAmount - amountPaid)
+   │
+   └── Display party list:
+            ┌────────────────────────────────────────┐
+            │ Party Name   Outstanding   Last Txn   │
+            │ [View Bill]                            │
+            └────────────────────────────────────────┘
+            │
+            ├── Click "View Bill" → Party Bill Detail Page
+            └── Buttons: "Daily Bill" | "Generate Bill (Party)"
+```
+
+### 10.2 Daily Bill Flow
+```
+Bills → "Daily Bill" button
+   │
+   ├── Date picker (select day)
+   ├── Fetch all cashPartyEntries for that date
+   │
+   └── Display table:
+            Party Name | Diff (KG) | Sales (₹) | Cash Party (₹) | Status
+            (grouped by party, one row per party per day)
+            │
+            ├── "Export PDF" → formal invoice for all parties that day
+            ├── "Export Excel" → one sheet per party
+            └── "Print" → browser print dialog (print-optimized CSS)
+```
+
+### 10.3 Party Bill Detail Flow
+```
+Bills → "View Bill" for a party
+   │
+   ├── Show date range picker (start date → end date)
+   ├── Fetch cashPartyEntries for that party + date range
+   │
+   └── Display day-by-day table:
+            Date | Diff (KG) | Sales (₹) | Cash Party (₹) | Status | Paid (₹) | Payment Date
+            (one row per transaction)
+            Grand Total row at bottom
+            Outstanding balance highlighted
+            │
+            ├── "Mark as Paid" button per row:
+            │        ├── Click → popup: "Enter amount paid"
+            │        ├── Owner enters amount (full or partial)
+            │        ├── If amount = full cashPartyAmount → status = "Paid"
+            │        ├── If amount < cashPartyAmount → status = "Partial"
+            │        ├── Record paymentDate = now (IST)
+            │        └── Update Dexie + queue Supabase sync
+            │
+            ├── "Export PDF" → formal invoice PDF for this party + date range
+            ├── "Export Excel" → Excel with one sheet for this party
+            └── "Print" → browser print dialog
+```
+
+### 10.4 Party Management Flow
+```
+Hamburger → Party Management
+   │
+   ├── View ordered list of all parties
+   ├── Add Party:
+   │        ├── Enter name → validate (not empty, not duplicate)
+   │        ├── Save to Dexie + queue sync
+   │        └── Available immediately in Cash Party popup dropdown
+   │
+   └── Remove Party:
+            ├── Confirmation popup
+            ├── Soft delete (isActive: false)
+            ├── Historical bills still show party name (greyed)
+            └── Party no longer appears in Cash Party popup dropdown
+```
+
+---
+
+## 13. Sync Flow
 
 ```
 App loads → check online status
@@ -321,7 +544,7 @@ App loads → check online status
 
 ---
 
-## 10. Offline Flow
+## 14. Offline Flow
 
 ```
 Internet connection lost
@@ -337,7 +560,7 @@ Internet connection lost
 
 ---
 
-## 11. Data Cleanup Flow
+## 15. Data Cleanup Flow
 
 ```
 On every login:
@@ -352,21 +575,27 @@ On every login:
 
 ---
 
-## 12. Screen Map
+## 16. Screen Map
 
 ```
 /login                  → Login Page
 /forgot-password        → Forgot Password Page
 /setup                  → Security Setup (first login)
 /                       → Dashboard (today's shift entry)
-/dashboard/:date        → Dashboard (specific date — edit or history)
-/calendar               → Calendar Page (date navigation + monthly summary)
+/dashboard/:date        → Dashboard (specific date)
+/calendar               → Calendar Page
+/attendance             → Attendance Register + Payroll
+/attendance/employee/:id → Employee Profile + Advance History
+/bills                  → Bills Landing
+/bills/daily            → Daily Bill View
+/bills/party/:partyId   → Party Bill Detail
+/parties                → Party Management
 /settings               → Settings Page
 ```
 
 ---
 
-## 13. Error States Summary
+## 17. Error States Summary
 
 | Scenario | Handling |
 |----------|---------|
@@ -382,3 +611,11 @@ On every login:
 | Supabase connection fails | "Sync Failed — Retrying" in header |
 | Max 15 nozzles reached | Toast: "Maximum nozzle limit reached" |
 | Max 50 employees reached | Toast: "Maximum employee limit reached" |
+| Cash Party > 0 but no party selected | Block save, popup stays open until party selected |
+| Payment amount exceeds outstanding | Inline error: "Amount exceeds outstanding balance" |
+| Bill export — no entries for date/range | Toast: "No Cash Party entries found for this period" |
+| Party deleted with pending bills | Warning: "This party has outstanding dues. Delete anyway?" |
+| Advance amount = 0 or negative | Block save, inline error: "Amount must be greater than 0" |
+| Deduction > Total Wage | Net Payable goes negative — shown in red, not blocked |
+| Pay Now when Net Payable is negative | Warning: "Net payable is negative. Confirm payment of ₹0?" |
+| No attendance data for selected range | Empty state: "No attendance records found for this period" |

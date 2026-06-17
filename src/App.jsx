@@ -7,11 +7,16 @@ import { SettingsProvider } from './context/SettingsContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import ForgotPassword from './components/auth/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import SecuritySetup from './components/auth/SecuritySetup';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import HistoryPage from './pages/HistoryPage';
 import CalendarPage from './pages/CalendarPage';
+import PartyManagementPage from './pages/PartyManagementPage';
+import BillsPage from './pages/BillsPage';
+import AttendancePage from './pages/AttendancePage';
+import EmployeeProfilePage from './pages/EmployeeProfilePage';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import OfflineBanner from './components/layout/OfflineBanner';
 
@@ -28,6 +33,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route
               path="/setup"
               element={
@@ -73,6 +79,38 @@ function App() {
               element={
                 <ProtectedRoute>
                   <HistoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parties"
+              element={
+                <ProtectedRoute>
+                  <PartyManagementPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/bills"
+              element={
+                <ProtectedRoute>
+                  <BillsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendance"
+              element={
+                <ProtectedRoute>
+                  <AttendancePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendance/employee/:id"
+              element={
+                <ProtectedRoute>
+                  <EmployeeProfilePage />
                 </ProtectedRoute>
               }
             />

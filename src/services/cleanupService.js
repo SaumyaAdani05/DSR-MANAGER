@@ -1,40 +1,42 @@
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
 import { getCutoffDate } from '../utils/dateUtils';
-
-const RECORDS_KEY = 'dsr_records';
-const CALENDAR_KEY = 'dsr_calendar';
 
 export const cleanOldRecords = async () => {
   try {
     const cutoffStr = getCutoffDate();
-    const recordsData = localStorage.getItem(RECORDS_KEY);
-    if (!recordsData) return;
 
-    const records = JSON.parse(recordsData);
-    const updatedRecords = {};
-    const deletedDates = [];
+    // 1. Clean up shifts
+    const expiredShifts = await db.shifts.where('date').below(cutoffStr).toArray();
+    if (expiredShifts.length > 0) {
+      for (const shift of expiredShifts) {
+        // Delete from Dexie
+        await db.shifts.delete([shift.date, shift.shiftNumber]);
 
-    for (const date of Object.keys(records)) {
-      if (date < cutoffStr) {
-        deletedDates.push(date);
-      } else {
-        updatedRecords[date] = records[date];
+        // Queue deletion for Supabase
+        await queueSync(
+          'shifts',
+          `${shift.date}_${shift.shiftNumber}`,
+          { date: shift.date, shift_number: shift.shiftNumber },
+          'delete'
+        );
       }
+      console.log(`Cleaned up ${expiredShifts.length} old shifts locally and queued for sync deletion`);
     }
 
-    if (deletedDates.length === 0) return;
+    // 2. Clean up calendar metadata
+    const expiredCalendar = await db.calendar.where('date').below(cutoffStr).toArray();
+    if (expiredCalendar.length > 0) {
+      for (const entry of expiredCalendar) {
+        // Delete from Dexie
+        await db.calendar.delete(entry.date);
 
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(updatedRecords));
-
-    // Update calendar metadata
-    const calendarData = localStorage.getItem(CALENDAR_KEY);
-    if (calendarData) {
-      const dates = JSON.parse(calendarData);
-      const updatedDates = dates.filter((d) => !deletedDates.includes(d));
-      localStorage.setItem(CALENDAR_KEY, JSON.stringify(updatedDates));
+        // Queue deletion for Supabase
+        await queueSync('calendar', entry.date, { date: entry.date }, 'delete');
+      }
+      console.log(`Cleaned up ${expiredCalendar.length} old calendar entries locally and queued for sync deletion`);
     }
-
-    console.log(`Cleaned up ${deletedDates.length} old records from localStorage`);
   } catch (error) {
-    console.error('Cleanup error:', error);
+    console.error('Data retention cleanup error:', error);
   }
 };

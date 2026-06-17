@@ -1,19 +1,120 @@
-import { db } from '../db/localDB';
-import { queueSync } from './syncService';
-import { getTodayStr, getCutoffDate } from '../utils/dateUtils';
-import { getMonthName } from '../utils/formatters';
+import { db } from '../db/localDB.js';
+import { queueSync } from './syncService.js';
+import { getTodayStr, getCutoffDate, getNextDateStr } from '../utils/dateUtils.js';
+import { getMonthName } from '../utils/formatters.js';
+import { markAttendanceFromShift } from './attendanceService.js';
+import { saveCashPartyEntry } from './billService.js';
+
+const syncCashPartyEntries = async (date, shiftNumber, rows) => {
+  const existingEntries = await db.cashPartyEntries
+    .where('date').equals(date)
+    .and(e => e.shiftNumber === shiftNumber)
+    .toArray();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const existing = existingEntries.find(e => e.rowIndex === i);
+
+    if (row.cashParty > 0) {
+      if (existing) {
+        if (
+          existing.partyId !== row.partyId ||
+          existing.cashPartyAmount !== row.cashParty ||
+          existing.diffKg !== row.difference ||
+          existing.salesRs !== row.salesRs
+        ) {
+          await db.cashPartyEntries.update(existing.id, {
+            partyId: row.partyId,
+            partyName: row.partyName,
+            diffKg: row.difference,
+            salesRs: row.salesRs,
+            cashPartyAmount: row.cashParty,
+          });
+          await queueSync('cash_party_entries', existing.id, {
+            id: existing.id,
+            date,
+            shift_number: shiftNumber,
+            row_index: i,
+            party_id: row.partyId,
+            party_name: row.partyName,
+            diff_kg: row.difference,
+            sales_rs: row.salesRs,
+            cash_party_amount: row.cashParty,
+            status: existing.status,
+            amount_paid: existing.amountPaid,
+            payment_date: existing.paymentDate,
+            bill_number: existing.billNumber,
+          });
+        }
+      } else {
+        await saveCashPartyEntry({
+          date,
+          shiftNumber,
+          rowIndex: i,
+          partyId: row.partyId,
+          partyName: row.partyName,
+          diffKg: row.difference,
+          salesRs: row.salesRs,
+          cashPartyAmount: row.cashParty,
+        });
+      }
+    } else {
+      if (existing) {
+        await db.cashPartyEntries.delete(existing.id);
+        await queueSync('cash_party_entries', existing.id, null, 'delete');
+      }
+    }
+  }
+
+  for (const existing of existingEntries) {
+    if (existing.rowIndex >= rows.length) {
+      await db.cashPartyEntries.delete(existing.id);
+      await queueSync('cash_party_entries', existing.id, null, 'delete');
+    }
+  }
+};
 
 export const saveShift = async (date, shiftNumber, shiftData) => {
   const now = new Date().toISOString();
   
-  // Clean totals to ensure proper types
+  const rows = shiftData.rows || [];
   const totals = {
-    totalDifference: parseFloat(shiftData.totals?.totalDifference || 0),
-    totalSalesRs: parseFloat(shiftData.totals?.totalSalesRs || 0),
-    totalCash: parseFloat(shiftData.totals?.totalCash || 0),
-    totalCC: parseFloat(shiftData.totals?.totalCC || 0),
-    totalUPI: parseFloat(shiftData.totals?.totalUPI || 0),
-    totalCashParty: parseFloat(shiftData.totals?.totalCashParty || 0),
+    totalDifference: parseFloat(
+      (shiftData.totals?.totalDifference != null
+        ? shiftData.totals.totalDifference
+        : rows.reduce((sum, r) => sum + (parseFloat(r.difference) || 0), 0)
+      ).toFixed(2)
+    ),
+    totalSalesRs: parseFloat(
+      (shiftData.totals?.totalSalesRs != null
+        ? shiftData.totals.totalSalesRs
+        : rows.reduce((sum, r) => sum + (parseFloat(r.salesRs) || 0), 0)
+      ).toFixed(2)
+    ),
+    totalCash: parseFloat(
+      (shiftData.totals?.totalCash != null
+        ? shiftData.totals.totalCash
+        : rows.reduce((sum, r) => sum + (parseFloat(r.cash) || 0), 0)
+      ).toFixed(2)
+    ),
+    totalCC: parseFloat(
+      (shiftData.totals?.totalCC != null
+        ? shiftData.totals.totalCC
+        : rows.reduce((sum, r) => sum + (parseFloat(r.cc) || 0), 0)
+      ).toFixed(2)
+    ),
+    totalUPI: parseFloat(
+      (shiftData.totals?.totalUPI != null
+        ? shiftData.totals.totalUPI
+        : rows.reduce((sum, r) => sum + (parseFloat(r.upi) || 0), 0)
+      ).toFixed(2)
+    ),
+    totalCashParty: parseFloat(
+      (shiftData.totals?.totalCashParty != null
+        ? shiftData.totals.totalCashParty
+        : rows.reduce((sum, r) => sum + (parseFloat(r.cashParty) || 0), 0)
+      ).toFixed(2)
+    ),
   };
 
   const record = {
@@ -28,13 +129,16 @@ export const saveShift = async (date, shiftNumber, shiftData) => {
     isSaved: true,
   };
 
-  // Save locally first (instant)
   await db.shifts.put(record);
 
-  // Update calendar metadata
   await db.calendar.put({ date, hasData: true, updatedAt: now });
 
-  // Queue for cloud sync
+  // Auto-mark attendance
+  await markAttendanceFromShift(date, parseInt(shiftNumber), rows);
+
+  // Sync cash party entries
+  await syncCashPartyEntries(date, parseInt(shiftNumber), rows);
+
   await queueSync('shifts', `${date}_${shiftNumber}`, {
     date,
     shift_number: parseInt(shiftNumber),
@@ -160,7 +264,96 @@ export const getMonthlyData = async (year, month) => {
 export const loadShiftData = getShift;
 export const saveShiftData = saveShift;
 export const loadCalendarMetadata = getCalendarData;
-export const forceUpdateCarryover = async () => {};
+export const forceUpdateCarryover = async (date, shiftNumber, savedRows, savedPrice) => {
+  let nextShiftNum = shiftNumber + 1;
+  let nextDate = date;
+
+  if (shiftNumber === 3) {
+    nextDate = getNextDateStr(date);
+    nextShiftNum = 1;
+  }
+
+  const nextShift = await getShift(nextDate, nextShiftNum);
+  if (!nextShift) return false;
+
+  let updated = false;
+
+  // Determine the price for the next shift
+  let nextPrice = parseFloat(nextShift.price) || 0;
+  if (nextPrice === 0 && savedPrice > 0) {
+    nextPrice = savedPrice;
+    updated = true;
+  }
+
+  const updatedRows = nextShift.rows.map((row) => {
+    const match = savedRows.find((r) => r.nozzleId === row.nozzleId);
+    let opening = parseFloat(row.openingReading) || 0;
+    let isOpeningAutoFilled = row.isOpeningAutoFilled;
+
+    if (match) {
+      const matchClosing = parseFloat(match.closingReading) || 0;
+      if (matchClosing !== opening) {
+        opening = matchClosing;
+        isOpeningAutoFilled = true;
+        updated = true;
+      }
+    }
+
+    const closing = parseFloat(row.closingReading) || 0;
+    const diff = closing >= opening && opening > 0 ? parseFloat((closing - opening).toFixed(2)) : 0;
+    const sales = parseFloat((diff * nextPrice).toFixed(2));
+    const cc = parseFloat(row.cc) || 0;
+    const upi = parseFloat(row.upi) || 0;
+    const cashParty = parseFloat(row.cashParty) || 0;
+    
+    const cash = row.hasNotes
+      ? (parseFloat(row.cash) || 0)
+      : Math.max(0, parseFloat((sales - cc - upi - cashParty).toFixed(2)));
+
+    // Check if difference, sales, or cash changed due to reading or price updates
+    if (
+      opening !== (parseFloat(row.openingReading) || 0) ||
+      diff !== (parseFloat(row.difference) || 0) ||
+      sales !== (parseFloat(row.salesRs) || 0) ||
+      cash !== (parseFloat(row.cash) || 0)
+    ) {
+      updated = true;
+    }
+
+    return {
+      ...row,
+      openingReading: opening,
+      isOpeningAutoFilled,
+      difference: diff,
+      salesRs: sales,
+      cash,
+    };
+  });
+
+  if (updated) {
+    const totals = updatedRows.reduce(
+      (acc, r) => ({
+        totalDifference: parseFloat((acc.totalDifference + (r.difference || 0)).toFixed(2)),
+        totalSalesRs: parseFloat((acc.totalSalesRs + (r.salesRs || 0)).toFixed(2)),
+        totalCash: parseFloat((acc.totalCash + (parseFloat(r.cash) || 0)).toFixed(2)),
+        totalCC: parseFloat((acc.totalCC + (parseFloat(r.cc) || 0)).toFixed(2)),
+        totalUPI: parseFloat((acc.totalUPI + (parseFloat(r.upi) || 0)).toFixed(2)),
+        totalCashParty: parseFloat((acc.totalCashParty + (parseFloat(r.cashParty) || 0)).toFixed(2)),
+      }),
+      { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0, totalCashParty: 0 }
+    );
+
+    await saveShift(nextDate, nextShiftNum, {
+      ...nextShift,
+      price: nextPrice,
+      rows: updatedRows,
+      totals,
+    });
+    return true;
+  }
+
+  return false;
+};
 
 export const isMonthFullyCompleted = async (year, month) => {
   const data = await getMonthlyData(year, month);

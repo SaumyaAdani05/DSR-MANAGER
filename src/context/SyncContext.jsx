@@ -1,10 +1,22 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 
 const SyncContext = createContext(null);
 
 export const SyncProvider = ({ children }) => {
   const [syncStatus, setSyncStatus] = useState('synced');
   // 'synced' | 'syncing' | 'offline' | 'error'
+
+  useEffect(() => {
+    const handleSyncChange = (e) => {
+      if (e.detail) {
+        setSyncStatus(e.detail);
+      }
+    };
+    window.addEventListener('sync-status-change', handleSyncChange);
+    return () => {
+      window.removeEventListener('sync-status-change', handleSyncChange);
+    };
+  }, []);
 
   return (
     <SyncContext.Provider value={{ syncStatus, setSyncStatus }}>

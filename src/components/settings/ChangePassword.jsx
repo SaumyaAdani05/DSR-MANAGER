@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { updatePassword } from '../../services/authService';
 import { validatePassword, getPasswordErrors } from '../../utils/validators';
+import { useAuth } from '../../context/AuthContext';
 
 const ChangePassword = () => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -24,10 +29,9 @@ const ChangePassword = () => {
     setLoading(true);
     try {
       await updatePassword(currentPassword, newPassword);
-      toast.success('Password updated successfully');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      toast.success('Password updated successfully. Please log in again.');
+      logout();
+      navigate('/login');
     } catch (error) {
       toast.error(error.message);
     } finally {

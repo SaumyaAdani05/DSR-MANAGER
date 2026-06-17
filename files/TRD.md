@@ -8,23 +8,26 @@
 
 ## 1. Tech Stack Overview
 
-| Layer | Technology | Justification |
-|-------|-----------|---------------|
-| Frontend Framework | React 18 (Vite) | Fast build, large ecosystem, component reuse |
-| Styling | Tailwind CSS v3 | Utility-first, Adani theme via custom config |
-| State Management | React Context API + useReducer | Sufficient for single-user v1 |
-| Routing | React Router v6 | SPA navigation, protected routes |
-| Local Database | Dexie.js (IndexedDB wrapper) | Offline-first; survives cache clears when PWA installed |
-| Cloud Sync | Supabase (free tier — PostgreSQL) | Auto-sync every 30s; owner sets up free account |
-| Auth Storage | Supabase (custom table, bcrypt) | Not Firebase Auth; username is not email |
-| Excel Export | SheetJS (xlsx) | Industry standard, browser-compatible |
-| PDF Export | jsPDF + jspdf-autotable | Lightweight, no server needed |
-| Hosting | Vercel (free tier) | Continuous deployment, vercel.app subdomain |
-| PWA | Vite PWA Plugin (vite-plugin-pwa) | Service worker + manifest auto-generation |
-| Offline Cache | Workbox + Dexie.js | App shell cached; data in IndexedDB |
-| Timezone | date-fns-tz | IST conversions for all timestamps |
-| Number Format | Intl.NumberFormat (en-IN) | Indian format |
-| Password Hashing | bcryptjs | Client-side hashing before Supabase write |
+| Layer | Technology | Cost | Justification |
+|-------|-----------|------|---------------|
+| Frontend Framework | React 18 (Vite) | Free | Fast build, large ecosystem, component reuse |
+| Styling | Tailwind CSS v3 | Free | Utility-first, Adani theme via custom config |
+| State Management | React Context API + useReducer | Free | Sufficient for single-user v1 |
+| Routing | React Router v6 | Free | SPA navigation, protected routes |
+| Local Database | Dexie.js (IndexedDB wrapper) | Free | Offline-first; survives cache clears when PWA installed |
+| Cloud Database | Supabase (free tier — PostgreSQL) | Free | Auto-sync every 30s; 500MB storage |
+| Authentication | Custom bcrypt via Supabase | Free | Username is not an email; no third-party auth needed |
+| Version Control | GitHub | Free | Source code hosting, CI/CD trigger for Vercel |
+| Hosting | Vercel (free tier) | Free | Auto-deploy on GitHub push; vercel.app subdomain |
+| DNS | Cloudflare | Free | DNS management; fast CDN layer |
+| Error Tracking | Sentry (free tier) | Free | Captures runtime errors silently; 5K errors/month free |
+| Excel Export | SheetJS (xlsx) | Free | Industry standard, browser-compatible |
+| PDF Export | jsPDF + jspdf-autotable | Free | Lightweight, no server needed |
+| PWA | Vite PWA Plugin (vite-plugin-pwa) | Free | Service worker + manifest auto-generation |
+| Offline Cache | Workbox + Dexie.js | Free | App shell cached; data in IndexedDB |
+| Timezone | date-fns-tz | Free | IST conversions for all timestamps |
+| Number Format | Intl.NumberFormat (en-IN) | Free | Indian number format |
+| Password Hashing | bcryptjs | Free | Hashing before Supabase write |
 
 ---
 
@@ -140,6 +143,27 @@ db.version(1).stores({
   // Shift records
   shifts:     '&[date+shiftNumber], date, shiftNumber, price, rows, totals, savedAt, lastEditedAt, syncedAt, isSynced',
 
+  // Parties (Cash Party names — like employees)
+  parties:    '&id, name, isActive, order, addedAt, syncedAt',
+
+  // Cash Party transactions (linked to shift rows)
+  cashPartyEntries: '++id, date, shiftNumber, rowIndex, partyId, partyName, diffKg, salesRs, cashPartyAmount, status, amountPaid, paymentDate, billNumber, syncedAt',
+
+  // Bill counter (for auto-incrementing bill numbers)
+  billCounter: '&id, lastNumber, updatedAt',
+
+  // Attendance settings (per shift wage)
+  attendanceSettings: '&id, perShiftWage, updatedAt',
+
+  // Attendance records (auto-marked per shift per employee)
+  attendance: '&[date+shiftNumber+employeeId], date, shiftNumber, employeeId, employeeName, syncedAt',
+
+  // Advances given to employees
+  advances: '++id, employeeId, employeeName, amount, date, note, syncedAt',
+
+  // Salary payments per employee per period
+  salaryPayments: '++id, employeeId, employeeName, periodStart, periodEnd, totalShifts, totalWage, advanceGiven, deductionAmount, netPayable, status, paidAt, syncedAt',
+
   // Sync queue — tracks unsynced local changes
   syncQueue:  '++id, tableName, recordId, action, payload, createdAt',
 
@@ -224,6 +248,87 @@ CREATE TABLE IF NOT EXISTS shifts (
   saved_at TIMESTAMPTZ DEFAULT NOW(),
   last_edited_at TIMESTAMPTZ DEFAULT NOW(),
   PRIMARY KEY (date, shift_number)
+);
+
+-- Parties (Cash Party names)
+CREATE TABLE IF NOT EXISTS parties (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  display_order INTEGER NOT NULL,
+  added_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Cash Party transactions
+CREATE TABLE IF NOT EXISTS cash_party_entries (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  shift_number INTEGER NOT NULL,
+  row_index INTEGER NOT NULL,
+  party_id TEXT NOT NULL,
+  party_name TEXT NOT NULL,
+  diff_kg DECIMAL(10,2) NOT NULL,
+  sales_rs DECIMAL(10,2) NOT NULL,
+  cash_party_amount DECIMAL(10,2) NOT NULL,
+  status TEXT DEFAULT 'pending',        -- 'pending' | 'partial' | 'paid'
+  amount_paid DECIMAL(10,2) DEFAULT 0,
+  payment_date TIMESTAMPTZ,
+  bill_number TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Attendance settings
+CREATE TABLE IF NOT EXISTS attendance_settings (
+  id TEXT PRIMARY KEY,
+  per_shift_wage DECIMAL(10,2) DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Attendance records (auto-marked on shift save)
+CREATE TABLE IF NOT EXISTS attendance (
+  date TEXT NOT NULL,
+  shift_number INTEGER NOT NULL,
+  employee_id TEXT NOT NULL,
+  employee_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (date, shift_number, employee_id)
+);
+
+-- Advances
+CREATE TABLE IF NOT EXISTS advances (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  employee_name TEXT NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  date TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Salary payments
+CREATE TABLE IF NOT EXISTS salary_payments (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  employee_name TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  total_shifts INTEGER NOT NULL DEFAULT 0,
+  total_wage DECIMAL(10,2) NOT NULL DEFAULT 0,
+  advance_given DECIMAL(10,2) NOT NULL DEFAULT 0,
+  deduction_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  net_payable DECIMAL(10,2) NOT NULL DEFAULT 0,
+  status TEXT DEFAULT 'remaining',
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Bill counter
+CREATE TABLE IF NOT EXISTS bill_counter (
+  id TEXT PRIMARY KEY,
+  last_number INTEGER DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Calendar metadata
@@ -676,7 +781,207 @@ export default defineConfig({
 
 ---
 
-## 15. Export Services
+## 16. Attendance Service (`src/services/attendanceService.js`)
+
+```javascript
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
+
+// Auto-mark attendance when shift is saved
+// Called from shiftService.saveShift() after validation passes
+export const markAttendanceFromShift = async (date, shiftNumber, rows) => {
+  // Get unique employee IDs from shift rows (dedup same employee in multiple rows)
+  const uniqueEmployees = [...new Map(
+    rows
+      .filter(r => r.employeeId)
+      .map(r => [r.employeeId, { employeeId: r.employeeId, employeeName: r.employeeName }])
+  ).values()];
+
+  for (const emp of uniqueEmployees) {
+    const record = { date, shiftNumber, employeeId: emp.employeeId, employeeName: emp.employeeName };
+    await db.attendance.put(record); // put = upsert (idempotent)
+    await queueSync('attendance', `${date}_${shiftNumber}_${emp.employeeId}`, {
+      date, shift_number: shiftNumber,
+      employee_id: emp.employeeId, employee_name: emp.employeeName,
+    });
+  }
+};
+
+// Get attendance for a date range (for register view)
+export const getAttendanceForRange = async (startDate, endDate) => {
+  return db.attendance
+    .where('date').between(startDate, endDate, true, true)
+    .toArray();
+};
+
+// Get per shift wage setting
+export const getPerShiftWage = async () => {
+  const s = await db.attendanceSettings.get('main');
+  return s?.perShiftWage || 0;
+};
+
+// Update per shift wage
+export const updatePerShiftWage = async (wage) => {
+  await db.attendanceSettings.put({ id: 'main', perShiftWage: wage, updatedAt: new Date().toISOString() });
+  await queueSync('attendance_settings', 'main', { id: 'main', per_shift_wage: wage });
+};
+
+// Build monthly register data
+export const buildAttendanceRegister = async (startDate, endDate, employees, wage) => {
+  const records = await getAttendanceForRange(startDate, endDate);
+  const advances = await db.advances.where('date').between(startDate, endDate, true, true).toArray();
+  const payments = await db.salaryPayments
+    .where('periodStart').equals(startDate).and(p => p.periodEnd === endDate).toArray();
+
+  return employees.map(emp => {
+    // Attendance per date
+    const empRecords = records.filter(r => r.employeeId === emp.id);
+    const byDate = {};
+    empRecords.forEach(r => {
+      if (!byDate[r.date]) byDate[r.date] = [];
+      byDate[r.date].push(r.shiftNumber);
+    });
+
+    // Count unique shifts (deduplicated per shift per day)
+    const totalShifts = empRecords.length; // already unique per [date+shift+employee]
+
+    const totalWage = parseFloat((totalShifts * wage).toFixed(2));
+    const empAdvances = advances.filter(a => a.employeeId === emp.id);
+    const advanceGiven = empAdvances.reduce((s, a) => s + a.amount, 0);
+
+    const payment = payments.find(p => p.employeeId === emp.id);
+    const deductionAmount = payment?.deductionAmount || 0;
+    const netPayable = parseFloat((totalWage - deductionAmount).toFixed(2));
+    const status = payment?.status || 'remaining';
+    const paidAt = payment?.paidAt || null;
+
+    return { employee: emp, byDate, totalShifts, totalWage, advanceGiven, deductionAmount, netPayable, status, paidAt };
+  });
+};
+```
+
+---
+
+## 17. Advance Service (`src/services/advanceService.js`)
+
+```javascript
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
+import { v4 as uuidv4 } from 'uuid';
+
+// Add advance for an employee
+export const addAdvance = async (employeeId, employeeName, amount, date, note = '') => {
+  const id = uuidv4();
+  const record = { id, employeeId, employeeName, amount: parseFloat(amount), date, note, syncedAt: null };
+  await db.advances.add(record);
+  await queueSync('advances', id, { id, employee_id: employeeId, employee_name: employeeName, amount, date, note });
+  return record;
+};
+
+// Get advance history for a specific employee
+export const getEmployeeAdvances = async (employeeId) => {
+  return db.advances.where('employeeId').equals(employeeId).sortBy('date');
+};
+
+// Get total advance given to employee in a date range
+export const getAdvancesInRange = async (employeeId, startDate, endDate) => {
+  return db.advances
+    .where('employeeId').equals(employeeId)
+    .and(a => a.date >= startDate && a.date <= endDate)
+    .toArray();
+};
+
+// Record salary payment
+export const recordSalaryPayment = async (paymentData) => {
+  const id = uuidv4();
+  const record = { id, ...paymentData, status: 'paid', paidAt: new Date().toISOString() };
+  await db.salaryPayments.put(record);
+  await queueSync('salary_payments', id, {
+    id, employee_id: paymentData.employeeId, employee_name: paymentData.employeeName,
+    period_start: paymentData.periodStart, period_end: paymentData.periodEnd,
+    total_shifts: paymentData.totalShifts, total_wage: paymentData.totalWage,
+    advance_given: paymentData.advanceGiven, deduction_amount: paymentData.deductionAmount,
+    net_payable: paymentData.netPayable, status: 'paid', paid_at: record.paidAt,
+  });
+};
+
+// Update deduction amount for employee for a period
+export const updateDeduction = async (employeeId, periodStart, periodEnd, deductionAmount) => {
+  const existing = await db.salaryPayments
+    .where('[employeeId+periodStart]').equals([employeeId, periodStart]).first();
+  if (existing) {
+    await db.salaryPayments.update(existing.id, { deductionAmount });
+  }
+};
+```
+
+---
+
+## 18. Bill Service (`src/services/billService.js`)
+
+```javascript
+import { db } from '../db/localDB';
+import { queueSync } from './syncService';
+
+// Generate next bill number (BILL-001, BILL-002 ...)
+export const getNextBillNumber = async () => {
+  const counter = await db.billCounter.get('main') || { id: 'main', lastNumber: 0 };
+  const next = counter.lastNumber + 1;
+  await db.billCounter.put({ id: 'main', lastNumber: next, updatedAt: new Date().toISOString() });
+  return `BILL-${String(next).padStart(3, '0')}`;
+};
+
+// Save cash party entry when shift row is saved
+export const saveCashPartyEntry = async (entry) => {
+  const billNumber = await getNextBillNumber();
+  const record = { ...entry, billNumber, status: 'pending', amountPaid: 0, paymentDate: null };
+  await db.cashPartyEntries.add(record);
+  await queueSync('cash_party_entries', record.id, record);
+  return record;
+};
+
+// Get all parties with their outstanding balance
+export const getPartiesWithBalance = async () => {
+  const parties = await db.parties.where('isActive').equals(1).toArray();
+  const result = [];
+  for (const party of parties) {
+    const entries = await db.cashPartyEntries.where('partyId').equals(party.id).toArray();
+    const totalAmount = entries.reduce((s, e) => s + e.cashPartyAmount, 0);
+    const totalPaid = entries.reduce((s, e) => s + e.amountPaid, 0);
+    const outstanding = totalAmount - totalPaid;
+    const lastEntry = entries.sort((a,b) => b.date.localeCompare(a.date))[0];
+    result.push({ ...party, totalAmount, totalPaid, outstanding, lastDate: lastEntry?.date });
+  }
+  return result;
+};
+
+// Get entries for daily bill (all parties, one day)
+export const getDailyBillEntries = async (date) => {
+  return db.cashPartyEntries.where('date').equals(date).toArray();
+};
+
+// Get entries for a party within a date range
+export const getPartyBillEntries = async (partyId, startDate, endDate) => {
+  return db.cashPartyEntries
+    .where('partyId').equals(partyId)
+    .and(e => e.date >= startDate && e.date <= endDate)
+    .toArray();
+};
+
+// Mark transaction as paid (full or partial)
+export const markAsPaid = async (entryId, amountPaid) => {
+  const entry = await db.cashPartyEntries.get(entryId);
+  const newPaid = parseFloat((entry.amountPaid + amountPaid).toFixed(2));
+  const status = newPaid >= entry.cashPartyAmount ? 'paid' : 'partial';
+  const paymentDate = new Date().toISOString();
+  await db.cashPartyEntries.update(entryId, { amountPaid: newPaid, status, paymentDate });
+  await queueSync('cash_party_entries', entryId, { id: entryId, amount_paid: newPaid, status, payment_date: paymentDate });
+};
+```
+
+---
+
+## 19. Export Services
 
 ### 15.1 DSR Excel Export
 ```javascript
@@ -707,9 +1012,134 @@ export const exportDSR = (date, shifts, stationName) => {
 };
 ```
 
-### 15.2 Monthly PDF Export
+### 19.4 Bill PDF Export (Formal Invoice)
 ```javascript
-import jsPDF from 'jspdf';
+export const exportBillPDF = (billData, stationName) => {
+  const { party, entries, billNumber, dateRange, totalAmount, totalPaid, outstanding } = billData;
+  const doc = new jsPDF();
+
+  // Header
+  doc.setFontSize(18);
+  doc.setTextColor(0, 48, 135); // Adani Navy
+  doc.text(stationName, 14, 20);
+  doc.setFontSize(12);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Bill No: ${billNumber}`, 14, 30);
+  doc.text(`Date: ${formatDisplayDate(new Date())}`, 14, 37);
+  doc.text(`Party: ${party.name}`, 14, 44);
+  doc.text(`Period: ${dateRange.start} to ${dateRange.end}`, 14, 51);
+
+  // Table
+  autoTable(doc, {
+    startY: 60,
+    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash Party (₹)', 'Status', 'Paid (₹)', 'Payment Date']],
+    body: entries.map(e => [
+      formatDisplayDate(e.date), e.diffKg, formatINR(e.salesRs),
+      formatINR(e.cashPartyAmount), e.status.toUpperCase(),
+      formatINR(e.amountPaid), e.paymentDate ? formatDisplayDate(e.paymentDate) : '—'
+    ]),
+    foot: [[
+      'TOTAL', '', '',
+      formatINR(totalAmount), '', formatINR(totalPaid), ''
+    ]],
+  });
+
+  // Outstanding
+  const finalY = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(13);
+  doc.setTextColor(226, 35, 26); // Adani Red
+  doc.text(`Outstanding Balance: ${formatINR(outstanding)}`, 14, finalY);
+
+  const filename = `${billNumber.replace('-','')}_${party.name.replace(/\s+/g,'')}_DSR.pdf`;
+  doc.save(filename);
+};
+```
+
+### 19.5 Bill Excel Export
+```javascript
+export const exportBillExcel = (allPartyData, stationName) => {
+  const wb = XLSX.utils.book_new();
+  for (const { party, entries, totalAmount, totalPaid, outstanding } of allPartyData) {
+    const rows = [
+      [stationName],
+      [`Party: ${party.name}`],
+      [],
+      ['Date','Diff (KG)','Sales (₹)','Cash Party (₹)','Status','Paid (₹)','Payment Date'],
+      ...entries.map(e => [
+        e.date, e.diffKg, e.salesRs, e.cashPartyAmount,
+        e.status.toUpperCase(), e.amountPaid,
+        e.paymentDate ? formatDisplayDate(e.paymentDate) : '—'
+      ]),
+      ['TOTAL','','',totalAmount,'',totalPaid,''],
+      [],
+      [`Outstanding: ${outstanding}`],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, party.name.slice(0, 31)); // Excel tab max 31 chars
+  }
+  XLSX.writeFile(wb, `PartyBills_${formatExportDate(new Date())}.xlsx`);
+};
+```
+
+### 19.1 Attendance Register PDF Export
+```javascript
+export const exportAttendancePDF = (registerData, stationName, startDate, endDate, wage) => {
+  const doc = new jsPDF('landscape');
+  doc.setFontSize(16);
+  doc.setTextColor(0, 48, 135);
+  doc.text(stationName, 14, 15);
+  doc.setFontSize(12);
+  doc.setTextColor(0,0,0);
+  doc.text(`Attendance Register: ${formatDisplayDate(startDate)} to ${formatDisplayDate(endDate)}`, 14, 25);
+  doc.text(`Per Shift Wage: ${formatINR(wage)}`, 14, 32);
+
+  // Build date columns dynamically
+  const dates = getDatesInRange(startDate, endDate);
+  const head = [['Employee', ...dates.map(d => d.split('-')[2]), 'Shifts', 'Wage', 'Advance', 'Deduction', 'Net', 'Status']];
+  const body = registerData.map(row => [
+    row.employee.name,
+    ...dates.map(d => row.byDate[d]?.sort().join(',') || ''),
+    row.totalShifts,
+    formatINR(row.totalWage),
+    formatINR(row.advanceGiven),
+    formatINR(row.deductionAmount),
+    formatINR(row.netPayable),
+    row.status.toUpperCase(),
+  ]);
+
+  autoTable(doc, { startY: 38, head, body, styles: { fontSize: 8 } });
+  doc.save(`Attendance_${formatExportDate(startDate)}_${formatExportDate(endDate)}.pdf`);
+};
+```
+
+### 19.2 Attendance Register Excel Export
+```javascript
+export const exportAttendanceExcel = (registerData, stationName, startDate, endDate, wage) => {
+  const wb = XLSX.utils.book_new();
+  const dates = getDatesInRange(startDate, endDate);
+
+  const header = ['Employee', ...dates.map(d => d.split('-')[2]),
+    'Total Shifts', 'Total Wage', 'Advance Given', 'Deduction', 'Net Payable', 'Status'];
+  const rows = [
+    [stationName],
+    [`Period: ${startDate} to ${endDate} | Per Shift Wage: ₹${wage}`],
+    [],
+    header,
+    ...registerData.map(row => [
+      row.employee.name,
+      ...dates.map(d => row.byDate[d]?.sort().join(',') || ''),
+      row.totalShifts, row.totalWage, row.advanceGiven,
+      row.deductionAmount, row.netPayable, row.status.toUpperCase(),
+    ]),
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+  XLSX.writeFile(wb, `Attendance_${formatExportDate(startDate)}.xlsx`);
+};
+```
+
+### 19.7 Monthly DSR PDF Export
 import autoTable from 'jspdf-autotable';
 
 export const exportMonthlyPDF = (monthName, year, rows, stationName) => {
@@ -730,7 +1160,7 @@ export const exportMonthlyPDF = (monthName, year, rows, stationName) => {
 
 ---
 
-## 16. Dependencies (`package.json`)
+## 20. Dependencies (`package.json`)
 
 ```json
 {
@@ -747,7 +1177,8 @@ export const exportMonthlyPDF = (monthName, year, rows, stationName) => {
     "date-fns": "^3.3.1",
     "date-fns-tz": "^3.1.3",
     "react-hot-toast": "^2.4.1",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "@sentry/react": "^7.99.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
@@ -762,11 +1193,82 @@ export const exportMonthlyPDF = (monthName, year, rows, stationName) => {
 
 ---
 
-## 17. Environment Variables (`.env`)
+## 21. Sentry Error Tracking Setup (`src/main.jsx`)
+
+```javascript
+import * as Sentry from '@sentry/react';
+
+Sentry.init({
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  environment: import.meta.env.MODE,         // 'development' or 'production'
+  tracesSampleRate: 1.0,                      // 100% in production (adjust if volume grows)
+  integrations: [
+    Sentry.browserTracingIntegration(),
+  ],
+});
+```
+
+**What Sentry captures automatically:**
+- JavaScript runtime errors (uncaught exceptions)
+- Failed Supabase sync operations (wrapped in try/catch + Sentry.captureException)
+- Failed Dexie reads/writes
+- React component render errors (via ErrorBoundary)
+
+**Manual error reporting example:**
+```javascript
+try {
+  await runSync();
+} catch (err) {
+  Sentry.captureException(err, {
+    tags: { module: 'sync', action: 'push' },
+    extra: { queueLength: queue.length },
+  });
+  setSyncStatus('error');
+}
+```
+
+**Setup steps:**
+1. Create free account at [sentry.io](https://sentry.io)
+2. Create new project → select React
+3. Copy DSN → paste into `.env` as `VITE_SENTRY_DSN`
+4. Add DSN to Vercel environment variables
+
+---
+
+## 22. GitHub + Vercel CI/CD Setup
+
+```
+GitHub repo (main branch)
+    │
+    └── Push to main
+            │
+            └── Vercel auto-detects push
+                    │
+                    └── Runs: npm run build
+                            │
+                            └── Deploys to vercel.app
+```
+
+**Setup steps:**
+1. Create GitHub repo: `github.com/yourname/dsr-manager`
+2. Push code: `git init → git add . → git commit → git push`
+3. In Vercel: Import GitHub repo → auto-deploy configured
+4. Every `git push` to `main` → auto-deploys to production
+
+**Cloudflare DNS** (if using custom domain in future):
+- Add site to Cloudflare
+- Point nameservers to Cloudflare from domain registrar
+- Add CNAME record pointing to `cname.vercel-dns.com`
+- Enable proxy (orange cloud) for CDN + DDoS protection
+
+---
+
+## 23. Environment Variables (`.env`)
 
 ```
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SENTRY_DSN=your_sentry_dsn_url
 ```
 
-> These are stored in `.env` and also saved to Dexie `settings` table via the Settings page for runtime use. Supabase anon key is safe to expose client-side (row-level security handles access).
+> Supabase anon key is safe to expose client-side (Supabase row-level security handles access control). Sentry DSN is also safe to expose publicly. All three must be added to Vercel's Environment Variables dashboard for production builds.

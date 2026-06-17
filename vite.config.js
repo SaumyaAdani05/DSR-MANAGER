@@ -11,11 +11,6 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\.supabase\.co/,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'supabase-cache' },
-          },
-          {
             urlPattern: /^https:\/\/fonts\.googleapis\.com/,
             handler: 'StaleWhileRevalidate',
             options: {

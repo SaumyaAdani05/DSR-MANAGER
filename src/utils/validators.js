@@ -1,5 +1,5 @@
-import { isReconciled } from './calculations';
-import { PASSWORD_RULES } from './constants';
+import { isReconciled } from './calculations.js';
+import { PASSWORD_RULES } from './constants.js';
 
 export const validateRow = (row, rowIndex) => {
   const errors = [];
@@ -16,6 +16,9 @@ export const validateRow = (row, rowIndex) => {
   if (row.cc < 0) errors.push({ field: 'CC', message: 'CC cannot be negative' });
   if (row.upi < 0) errors.push({ field: 'UPI', message: 'UPI cannot be negative' });
   if (row.cashParty < 0) errors.push({ field: 'Cash Party', message: 'Cash Party cannot be negative' });
+  if (row.cashParty > 0 && !row.partyId) {
+    errors.push({ field: 'Cash Party', message: 'Party selection is required when Cash Party amount is entered' });
+  }
   if (row.salesRs > 0 && !isReconciled(row)) {
     const totalPayments = (row.cash || 0) + (row.cc || 0) + (row.upi || 0) + (row.cashParty || 0);
     errors.push({

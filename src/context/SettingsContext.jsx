@@ -8,8 +8,8 @@ import {
   getEmployees,
   addEmployee as addEmployeeService,
   removeEmployee as removeEmployeeService,
-} from '../services/settingsService';
-import { useAuth } from './AuthContext';
+} from '../services/settingsService.js';
+import { useAuth } from './AuthContext.jsx';
 import toast from 'react-hot-toast';
 
 const SettingsContext = createContext(null);

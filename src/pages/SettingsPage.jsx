@@ -28,16 +28,16 @@ const SettingsPage = () => {
   useEffect(() => {
     setEditName(stationName);
   }, [stationName]);
+  const loadOwner = async () => {
+    try {
+      const data = await getOwnerData();
+      setOwnerData(data);
+    } catch (err) {
+      console.error('Failed to load owner data', err);
+    }
+  };
 
   useEffect(() => {
-    const loadOwner = async () => {
-      try {
-        const data = await getOwnerData();
-        setOwnerData(data);
-      } catch (err) {
-        console.error('Failed to load owner data', err);
-      }
-    };
     loadOwner();
   }, []);
 
@@ -115,7 +115,7 @@ const SettingsPage = () => {
         {/* Security Question */}
         <section className="bg-white rounded-lg shadow-card p-6">
           <h2 className="text-sm font-semibold text-adani-navy mb-3">Security Question</h2>
-          <SecurityQuestion currentQuestion={ownerData?.securityQuestion} />
+          <SecurityQuestion currentQuestion={ownerData?.securityQuestion} onUpdate={loadOwner} />
         </section>
 
         {/* Account Info */}

@@ -2,8 +2,8 @@ import { createContext, useContext, useState, useCallback } from 'react';
 import {
   loadShiftData,
   loadCalendarMetadata,
-} from '../services/shiftService';
-import { useAuth } from './AuthContext';
+} from '../services/shiftService.js';
+import { useAuth } from './AuthContext.jsx';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import toast from 'react-hot-toast';

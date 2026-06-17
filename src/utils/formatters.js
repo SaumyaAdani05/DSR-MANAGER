@@ -1,4 +1,4 @@
-import { LOCALE, TIMEZONE } from './constants';
+import { LOCALE, TIMEZONE } from './constants.js';
 
 export const formatINR = (value) =>
   new Intl.NumberFormat(LOCALE, {

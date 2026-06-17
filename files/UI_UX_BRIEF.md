@@ -104,6 +104,9 @@ Font: **Inter** (Google Fonts — Regular, Medium, SemiBold, Bold, Italic)
 │  DSR Manager    [×]  │
 │ ─────────────────    │
 │  📅 Calendar         │
+│  🧾 Bills            │
+│  👥 Party Management │
+│  🕐 Attendance       │
 │  📤 Export DSR       │
 │  📊 Monthly Report   │
 │  ⚙️  Settings        │
@@ -282,6 +285,35 @@ Font: **Inter** (Google Fonts — Regular, Medium, SemiBold, Bold, Italic)
 
 ---
 
+### 5.15 Cash Party Popup
+```
+┌──────────────── Select Party ───────────────────┐
+│                                                 │
+│  🔍 Search party...                             │
+│  ─────────────────────────────────────────────  │
+│  Ramesh Trucking                                │
+│  Gujarat Transport Co.                          │
+│  Patel Enterprises                              │
+│  ─────────────────────────────────────────────  │
+│  + Add New Party                                │
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+- Appears immediately when Cash Party amount > 0 entered
+- Search box at top, filtered list below
+- "Add New Party" shortcut at bottom (opens Party Management)
+- Auto-closes on party selection
+- Party name shows as small navy badge below Cash Party cell in grid
+
+### 5.16 Status Badges
+| Status | Background | Text | Border |
+|--------|-----------|------|--------|
+| Pending | `#FEF3C7` | `#92400E` amber | `#F59E0B` |
+| Partial | `#EFF6FF` | `#1E40AF` blue | `#3B82F6` |
+| Paid | `#F0FDF4` | `#166534` green | `#22C55E` |
+
+---
+
 ## 6. Page Layouts
 
 ### 6.1 Login Page
@@ -362,7 +394,171 @@ Font: **Inter** (Google Fonts — Regular, Medium, SemiBold, Bold, Italic)
 
 ---
 
-### 6.4 Settings Page
+### 6.4 Bills Landing Page
+```
+┌──────── Header ─────────────────────────────────────────────────────┐
+│                                                                     │
+│  Bills                        [ Daily Bill ]  [ Generate Bill ]     │
+│  ─────────────────────────────────────────────────────────────────  │
+│  ┌────────────────┬─────────────────┬──────────────┬─────────────┐  │
+│  │ Party Name     │ Outstanding (₹) │ Last Txn     │             │  │
+│  ├────────────────┼─────────────────┼──────────────┼─────────────┤  │
+│  │ Ramesh Trucking│ ₹45,000         │ 09/06/2026   │ [View Bill] │  │
+│  │ Patel Enterpr. │ ₹12,500         │ 08/06/2026   │ [View Bill] │  │
+│  │ Gujarat Trans. │ ₹0 ✓            │ 05/06/2026   │ [View Bill] │  │
+│  └────────────────┴─────────────────┴──────────────┴─────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+- Outstanding = 0: green text with ✓
+- Outstanding > 0: red text
+
+### 6.5 Party Bill Detail Page
+```
+┌──────── Header ─────────────────────────────────────────────────────┐
+│                                                                     │
+│  ← Back     Bill: Ramesh Trucking          BILL-042                 │
+│                                                                     │
+│  From: [01/06/2026]    To: [09/06/2026]    [ Apply Range ]          │
+│  ─────────────────────────────────────────────────────────────────  │
+│  ┌──────────┬─────────┬───────────┬──────────┬─────────┬─────────┐  │
+│  │ Date     │Diff(KG) │ Sales(₹)  │CashParty │ Status  │ Action  │  │
+│  ├──────────┼─────────┼───────────┼──────────┼─────────┼─────────┤  │
+│  │01/06/2026│ 120.50  │ ₹11,628   │ ₹8,000   │[PENDING]│[Pay]    │  │
+│  │03/06/2026│  98.25  │  ₹9,481   │ ₹7,000   │[PARTIAL]│[Pay]    │  │
+│  │07/06/2026│ 145.00  │ ₹14,002   │₹10,000   │  [PAID] │  ✓      │  │
+│  ├──────────┼─────────┼───────────┼──────────┼─────────┼─────────┤  │
+│  │ TOTAL    │ 363.75  │ ₹35,111   │ ₹25,000  │         │         │  │
+│  └──────────┴─────────┴───────────┴──────────┴─────────┴─────────┘  │
+│                                                                     │
+│  Outstanding Balance: ₹15,000                                       │
+│                                                                     │
+│         [ Export PDF ]   [ Export Excel ]   [ Print ]              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.6 Mark as Paid Popup
+```
+┌──────── Record Payment ─────────────────────┐
+│                                             │
+│  Party: Ramesh Trucking                     │
+│  Date: 01/06/2026                           │
+│  Total Due: ₹8,000                          │
+│  Already Paid: ₹0                           │
+│  Outstanding: ₹8,000                        │
+│                                             │
+│  Amount Paid Now: [ 8000.00      ]          │
+│                                             │
+│  Payment Date: [09/06/2026      ]           │
+│                                             │
+│             [ Confirm ]  [ Cancel ]         │
+└─────────────────────────────────────────────┘
+```
+- Amount Paid Now: pre-filled with full outstanding, editable
+- Payment Date: defaults to today (IST), editable
+
+### 6.7 PDF Bill (Formal Invoice Preview)
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  MEMNAGAR CNG                                                       │
+│  ─────────────────────────────────────────────────────────────────  │
+│  Bill No:  BILL-042              Date: 09/06/2026                   │
+│  Party:    Ramesh Trucking                                          │
+│  Period:   01/06/2026 to 09/06/2026                                 │
+│  ─────────────────────────────────────────────────────────────────  │
+│  Date       Diff(KG)  Sales(₹)  Cash Party(₹)  Status  Paid  PmtDt │
+│  01/06/26   120.50   ₹11,628    ₹8,000        PENDING   —     —    │
+│  03/06/26    98.25    ₹9,481    ₹7,000        PARTIAL ₹3,500 05/06 │
+│  07/06/26   145.00   ₹14,002   ₹10,000          PAID ₹10,000 08/06 │
+│  ─────────────────────────────────────────────────────────────────  │
+│  TOTAL      363.75   ₹35,111   ₹25,000                             │
+│                                                                     │
+│  Outstanding Balance: ₹11,500                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.9 Attendance Register Page
+```
+┌──────── Header ─────────────────────────────────────────────────────┐
+│                                                                     │
+│  Attendance Register                                                │
+│                                                                     │
+│  Per Shift Wage: ₹ [ 300.00 ]    From: [01/06/2026] To:[30/06/2026]│
+│                              [ Load Register ]  [Export PDF] [Excel]│
+│  ─────────────────────────────────────────────────────────────────  │
+│  ┌──────────────┬──┬──┬──┬──┬──┬──┬──┬──┬───┬────┬──────┬────────┐ │
+│  │ Employee     │1 │2 │3 │4 │5 │6 │7 │..│Tot│Wage│Adv/D │Net│Stat│ │
+│  ├──────────────┼──┼──┼──┼──┼──┼──┼──┼──┼───┼────┼──────┼────────┤ │
+│  │ Ramesh Kumar │1 │  │1,│  │2 │  │1 │..│ 8 │2400│ 500  │1900│[Pay]│ │
+│  │ Suresh Patel │  │1 │  │1 │  │1 │  │..│ 5 │1500│ 200  │1300│[Pay]│ │
+│  │ Mahesh Shah  │1,│1 │  │  │1 │  │1,│..│12 │3600│1000  │2600│✓Paid│ │
+│  └──────────────┴──┴──┴──┴──┴──┴──┴──┴──┴───┴────┴──────┴────────┘ │
+│                                                                     │
+│  Cell legend: "1" = Shift 1, "1,2" = Shift 1+2, blank = absent    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+- Employee names clickable → opens Employee Profile page
+- "Add Advance" button (➕) per employee row (far right before Pay)
+- Deduction column: editable inline number input per employee
+- Net Payable: red text if negative
+- Status: "Pay Now" button (red) or "✓ PAID [date]" (green) 
+- Horizontal scroll for months with many dates
+
+### 6.10 Add Advance Popup
+```
+┌──────── Add Advance ────────────────────────────────┐
+│                                                     │
+│  Employee:  Ramesh Kumar                            │
+│                                                     │
+│  Amount (₹):  [ 500.00          ]                   │
+│  Date:        [ 09/06/2026      ]                   │
+│  Note:        [ medical expense ] (optional)        │
+│                                                     │
+│               [ Save Advance ]  [ Cancel ]          │
+└─────────────────────────────────────────────────────┘
+```
+
+### 6.11 Pay Salary Popup
+```
+┌──────── Confirm Salary Payment ─────────────────────┐
+│                                                     │
+│  Employee:      Ramesh Kumar                        │
+│  Period:        01/06/2026 to 30/06/2026            │
+│  ─────────────────────────────────────────────────  │
+│  Total Shifts:  8                                   │
+│  Per Shift Wage: ₹300                               │
+│  Total Wage:    ₹2,400                              │
+│  Advance Deduction: ₹500                            │
+│  Net Payable:   ₹1,900                              │
+│  ─────────────────────────────────────────────────  │
+│  Payment Date:  [ 09/06/2026  ]                     │
+│                                                     │
+│         [ Confirm Payment ]  [ Cancel ]             │
+└─────────────────────────────────────────────────────┘
+```
+- Net Payable shown in red if negative
+
+### 6.12 Employee Profile Page
+```
+┌──────── Ramesh Kumar ← Back ────────────────────────────────────────┐
+│                                                                     │
+│  Outstanding Advance: ₹2,500                                        │
+│                                                                     │
+│  ┌─ Advance History ────────────────────────────────────────────┐   │
+│  │  Date        Amount     Note               Running Total     │   │
+│  │  09/06/26   ₹500    medical expense         ₹500             │   │
+│  │  15/06/26   ₹1,000  personal                ₹1,500           │   │
+│  │  22/06/26   ₹1,000  —                       ₹2,500           │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─ Salary History ─────────────────────────────────────────────┐   │
+│  │  Period          Shifts  Wage    Deduct  Net     Status      │   │
+│  │  May 2026        12      ₹3,600  ₹1,000  ₹2,600  PAID 01/06 │   │
+│  │  Apr 2026         9      ₹2,700  ₹500    ₹2,200  PAID 02/05 │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.13 Settings Page
 ```
 ┌──────── Settings ────────────────────────────────────────────────────┐
 │                                                                      │

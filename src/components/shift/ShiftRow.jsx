@@ -1,6 +1,6 @@
-import { calcDifference, calcSales, isReconciled } from '../../utils/calculations';
-import { formatNumber } from '../../utils/formatters';
-import SearchDropdown from '../ui/SearchDropdown';
+import { calcDifference, calcSales, isReconciled } from '../../utils/calculations.js';
+import { formatNumber } from '../../utils/formatters.js';
+import SearchDropdown from '../ui/SearchDropdown.jsx';
 
 const ShiftRow = ({
   row,
@@ -12,16 +12,32 @@ const ShiftRow = ({
   price,
   onChange,
   onOpenNotesModal,
+  onTriggerCashPartyPopup,
   readOnly,
   errors,
 }) => {
   const hasError = errors && errors.length > 0;
   const reconciled = row.salesRs > 0 ? isReconciled(row) : null;
 
+  const blockLetterInput = (e) => {
+    const allowed = [
+      'Backspace', 'Tab', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+      'Delete', 'Home', 'End', '.'
+    ];
+    if (allowed.includes(e.key) || (e.ctrlKey || e.metaKey)) {
+      if (e.key === '.' && e.target.value.includes('.')) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (!/^\d$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
   const handleFieldChange = (field, value) => {
     const updated = { ...row, [field]: value };
 
-    // Recalculate on closing reading change
     if (field === 'closingReading' || field === 'openingReading') {
       const opening = field === 'openingReading' ? parseFloat(value) || 0 : parseFloat(row.openingReading) || 0;
       const closing = field === 'closingReading' ? parseFloat(value) || 0 : parseFloat(row.closingReading) || 0;
@@ -31,12 +47,10 @@ const ShiftRow = ({
       }
     }
 
-    // Clear auto-fill flag when opening reading is manually edited
     if (field === 'openingReading') {
       updated.isOpeningAutoFilled = false;
     }
 
-    // Auto-calculate cash from salesRs, cc, upi, and cashParty if hasNotes is false
     if (!updated.hasNotes) {
       const sales = updated.salesRs || 0;
       const cc = parseFloat(updated.cc) || 0;
@@ -87,7 +101,22 @@ const ShiftRow = ({
     }
   };
 
-  // Map options for search dropdowns
+  const handleCashPartyBlur = (e) => {
+    handleBlur();
+    const val = parseFloat(e.target.value) || 0;
+    if (val > 0) {
+      onTriggerCashPartyPopup(index, val);
+    } else {
+      // If reset to 0, clear party metadata
+      onChange(index, {
+        ...row,
+        cashParty: 0,
+        partyId: null,
+        partyName: null,
+      });
+    }
+  };
+
   const nozzleOptions = nozzles.map((n) => ({
     id: n.id,
     name: n.name,
@@ -100,15 +129,21 @@ const ShiftRow = ({
     disabled: false,
   }));
 
+  const cellBgClass = hasError
+    ? 'bg-[#fef2f2] group-hover:bg-blue-50/60'
+    : striped
+    ? 'bg-[#f8f9fc] group-hover:bg-blue-50/60'
+    : 'bg-white group-hover:bg-blue-50/60';
+
   return (
     <tr
-      className={`border-b border-gray-100 transition-colors duration-100
-        ${hasError ? 'border-l-[3px] border-l-error bg-red-50/50' : ''}
+      className={`group border-b border-gray-100 transition-colors duration-100
+        ${hasError ? 'bg-red-50/50' : ''}
         ${striped && !hasError ? 'bg-adani-navy/[0.02]' : ''}
         hover:bg-blue-50/60`}
     >
       {/* Nozzle Search Dropdown */}
-      <td className="px-2 py-2 w-[150px]">
+      <td className={`px-2 py-2 w-[150px] sticky left-0 z-10 ${cellBgClass} border-l-[3px] ${hasError ? 'border-l-error' : 'border-l-transparent'} transition-colors duration-100`}>
         <SearchDropdown
           options={nozzleOptions}
           value={row.nozzleId || ''}
@@ -119,7 +154,7 @@ const ShiftRow = ({
       </td>
 
       {/* Employee Search Dropdown */}
-      <td className="px-2 py-2 w-[180px]">
+      <td className={`px-2 py-2 w-[180px] sticky left-[150px] z-10 ${cellBgClass} border-r border-gray-200 transition-colors duration-100`}>
         <SearchDropdown
           options={employeeOptions}
           value={row.employeeId || ''}
@@ -137,6 +172,7 @@ const ShiftRow = ({
           min="0"
           value={row.openingReading || ''}
           onChange={(e) => handleFieldChange('openingReading', parseFloat(e.target.value) || 0)}
+          onKeyDown={blockLetterInput}
           onBlur={handleBlur}
           disabled={readOnly}
           className={`w-full h-10 px-3 text-right text-sm border border-adani-border rounded-md
@@ -156,6 +192,7 @@ const ShiftRow = ({
           min="0"
           value={row.closingReading || ''}
           onChange={(e) => handleFieldChange('closingReading', parseFloat(e.target.value) || 0)}
+          onKeyDown={blockLetterInput}
           onBlur={handleBlur}
           disabled={readOnly}
           className="w-full h-10 px-3 text-right text-sm border border-adani-border rounded-md focus:outline-none focus:ring-2 focus:ring-adani-navy disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -185,6 +222,8 @@ const ShiftRow = ({
           min="0"
           value={row.cc ?? ''}
           onChange={(e) => handleFieldChange('cc', parseFloat(e.target.value) || 0)}
+          onKeyDown={blockLetterInput}
+          onBlur={handleBlur}
           disabled={readOnly}
           className="w-full h-10 px-3 text-right text-sm border border-adani-border rounded-md focus:outline-none focus:ring-2 focus:ring-adani-navy disabled:bg-gray-100 disabled:cursor-not-allowed"
           aria-label={`Credit card for row ${index + 1}`}
@@ -199,6 +238,8 @@ const ShiftRow = ({
           min="0"
           value={row.upi ?? ''}
           onChange={(e) => handleFieldChange('upi', parseFloat(e.target.value) || 0)}
+          onKeyDown={blockLetterInput}
+          onBlur={handleBlur}
           disabled={readOnly}
           className="w-full h-10 px-3 text-right text-sm border border-adani-border rounded-md focus:outline-none focus:ring-2 focus:ring-adani-navy disabled:bg-gray-100 disabled:cursor-not-allowed"
           aria-label={`UPI for row ${index + 1}`}
@@ -219,12 +260,17 @@ const ShiftRow = ({
           <button
             type="button"
             onClick={() => onOpenNotesModal(index)}
-            className="absolute right-2 text-adani-gray hover:text-adani-navy focus:outline-none"
+            className={`absolute right-2 p-1.5 rounded-full transition-colors focus:outline-none ring-1 ${
+              row.hasNotes
+                ? 'text-green-600 bg-green-50 hover:bg-green-100 hover:text-green-700 ring-green-200'
+                : 'text-gray-400 bg-gray-50 hover:bg-gray-100 hover:text-adani-navy ring-gray-250'
+            }`}
             title={row.hasNotes ? 'View/Edit cash notes breakdown' : 'View/Enter cash notes breakdown'}
+            id={`cash-notes-btn-${index}`}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 text-gray-500 hover:text-adani-navy" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               {row.hasNotes ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               ) : (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               )}
@@ -241,10 +287,17 @@ const ShiftRow = ({
           min="0"
           value={row.cashParty ?? ''}
           onChange={(e) => handleFieldChange('cashParty', parseFloat(e.target.value) || 0)}
+          onKeyDown={blockLetterInput}
+          onBlur={handleCashPartyBlur}
           disabled={readOnly}
           className="w-full h-10 px-3 text-right text-sm border border-adani-border rounded-md focus:outline-none focus:ring-2 focus:ring-adani-navy disabled:bg-gray-100 disabled:cursor-not-allowed"
           aria-label={`Cash party for row ${index + 1}`}
         />
+        {row.partyName && (
+          <div className="mt-1 text-[11px] font-semibold text-adani-navy bg-blue-50 px-1.5 py-0.5 rounded text-center truncate max-w-[110px]" title={row.partyName}>
+            {row.partyName}
+          </div>
+        )}
       </td>
 
       {/* Reconciliation indicator */}
@@ -252,7 +305,7 @@ const ShiftRow = ({
         <td className="px-1 py-2 w-8">
           {reconciled ? (
             <svg
-              className="h-5 w-5 text-success"
+              className="h-5 w-5 text-green-600"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
               fill="none"
@@ -266,7 +319,7 @@ const ShiftRow = ({
             </svg>
           ) : (
             <svg
-              className="h-5 w-5 text-warning"
+              className="h-5 w-5 text-adani-red"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
               fill="none"

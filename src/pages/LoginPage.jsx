@@ -68,14 +68,6 @@ const LoginPage = () => {
 
         <LoginForm />
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => navigate('/forgot-password')}
-            className="text-sm text-adani-navy hover:text-adani-navyLight font-medium underline-offset-2 hover:underline transition-colors duration-150"
-          >
-            Forgot Password / Username?
-          </button>
-        </div>
       </div>
 
       {/* Footer with staggered animation */}

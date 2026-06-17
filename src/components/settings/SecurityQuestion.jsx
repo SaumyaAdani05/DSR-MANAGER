@@ -1,15 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { verifySecurityAnswer, updateSecurityQuestion } from '../../services/authService';
 
-const SecurityQuestion = ({ currentQuestion }) => {
+const SecurityQuestion = ({ currentQuestion, onUpdate }) => {
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [newQuestion, setNewQuestion] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
   const [loading, setLoading] = useState(false);
-  const [verified, setVerified] = useState(!currentQuestion);
+  const [verified, setVerified] = useState(false);
+
+  useEffect(() => {
+    // Only auto-verify if parent tells us no question exists (first login/setup).
+    // Avoid running before currentQuestion is loaded (undefined).
+    if (currentQuestion === undefined) return;
+    if (!currentQuestion) {
+      setVerified(true);
+    } else {
+      setVerified(false);
+    }
+  }, [currentQuestion]);
 
   const handleVerify = async () => {
     if (!currentAnswer.trim()) return;
@@ -19,7 +30,7 @@ const SecurityQuestion = ({ currentQuestion }) => {
       setVerified(true);
       toast.success('Identity verified');
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || 'Incorrect answer');
     } finally {
       setLoading(false);
     }
@@ -35,9 +46,11 @@ const SecurityQuestion = ({ currentQuestion }) => {
       setCurrentAnswer('');
       setNewQuestion('');
       setNewAnswer('');
-      setVerified(false);
+      if (onUpdate) {
+        await onUpdate();
+      }
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to update security question');
     } finally {
       setLoading(false);
     }

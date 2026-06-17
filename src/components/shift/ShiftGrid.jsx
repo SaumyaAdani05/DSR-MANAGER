@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import PriceHeader from './PriceHeader';
-import ShiftRow from './ShiftRow';
-import TotalRow from './TotalRow';
-import Button from '../ui/Button';
-import Modal from '../ui/Modal';
-import { calcRowTotals, calcDifference, calcSales } from '../../utils/calculations';
-import { validateShift } from '../../utils/validators';
-
+import PriceHeader from './PriceHeader.jsx';
+import ShiftRow from './ShiftRow.jsx';
+import TotalRow from './TotalRow.jsx';
+import Button from '../ui/Button.jsx';
+import Modal from '../ui/Modal.jsx';
+import CashPartyPopup from './CashPartyPopup.jsx';
+import { calcRowTotals, calcDifference, calcSales } from '../../utils/calculations.js';
+import { validateShift } from '../../utils/validators.js';
+import { getShift } from '../../services/shiftService.js';
+import { getNextDateStr } from '../../utils/dateUtils.js';
 
 const createEmptyRow = (index) => ({
   rowIndex: index,
@@ -36,6 +38,8 @@ const createEmptyRow = (index) => ({
   coins1: 0,
   hasNotes: false,
   isOpeningAutoFilled: false,
+  partyId: null,
+  partyName: null,
 });
 
 const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, readOnly, carryoverData }) => {
@@ -61,6 +65,13 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
     coins1: 0,
   });
 
+  // Cash Party state
+  const [showCashPartyModal, setShowCashPartyModal] = useState(false);
+  const [cashPartyRowIndex, setCashPartyRowIndex] = useState(null);
+
+  // Cascade Warning state
+  const [showCascadeWarning, setShowCascadeWarning] = useState(false);
+
   const handleOpenNotesModal = (index) => {
     const row = rows[index];
     setNotesModalRowIndex(index);
@@ -77,15 +88,36 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
     });
   };
 
-  // Initialize rows from shift data or nozzles
   useEffect(() => {
     if (shiftData?.rows?.length) {
-      setRows(shiftData.rows);
-      setPrice(shiftData.price || 0);
+      const resolvedPrice = shiftData.price || carryoverData?.price || 0;
+      setPrice(resolvedPrice);
+      
+      if (shiftData.price === 0 && resolvedPrice > 0) {
+        const recalculatedRows = shiftData.rows.map((row) => {
+          if (row.closingReading > 0 && row.openingReading > 0) {
+            const diff = calcDifference(row.closingReading, row.openingReading);
+            const sales = calcSales(diff, resolvedPrice);
+            const cc = parseFloat(row.cc) || 0;
+            const upi = parseFloat(row.upi) || 0;
+            const cashParty = parseFloat(row.cashParty) || 0;
+            const cash = row.hasNotes
+              ? (parseFloat(row.cash) || 0)
+              : Math.max(0, parseFloat((sales - cc - upi - cashParty).toFixed(2)));
+            return { ...row, difference: diff, salesRs: sales, cash };
+          }
+          return row;
+        });
+        setRows(recalculatedRows);
+      } else {
+        setRows(shiftData.rows);
+      }
     } else {
       const activeNozzles = nozzles.filter((n) => n.isActive);
       const initialRows = activeNozzles.map((nozzle, i) => {
-        const carryover = carryoverData?.[i];
+        const carryover = carryoverData?.find
+          ? carryoverData.find((c) => c.nozzleId === nozzle.id)
+          : carryoverData?.[i];
         return {
           ...createEmptyRow(i),
           nozzleId: nozzle.id,
@@ -96,10 +128,12 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
         };
       });
       setRows(initialRows);
+      if (carryoverData?.price) {
+        setPrice(carryoverData.price);
+      }
     }
   }, [shiftData, nozzles, carryoverData]);
 
-  // Recalculate totals when rows change
   useEffect(() => {
     setTotals(calcRowTotals(rows));
   }, [rows]);
@@ -108,7 +142,6 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
     setRows((prev) => prev.map((r, i) => (i === index ? updatedRow : r)));
   }, []);
 
-  // Recalculate all rows when price changes
   const handlePriceChange = (newPrice) => {
     setPrice(newPrice);
     setRows((prev) =>
@@ -131,18 +164,21 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
 
   const usedNozzleIds = rows.map((r) => r.nozzleId).filter(Boolean);
 
-  const handleSave = async () => {
-    const shiftPayload = { price, rows, carryoverApplied: !!carryoverData };
-    const errors = validateShift(shiftPayload);
-
-    if (errors.length > 0) {
-      setValidationErrors(errors);
-      setShowErrorModal(true);
-      return;
+  const checkSubsequentShift = async () => {
+    let nextDateStr = date;
+    let nextShiftNum = shiftNumber + 1;
+    if (shiftNumber === 3) {
+      nextDateStr = getNextDateStr(date);
+      nextShiftNum = 1;
     }
+    const nextShift = await getShift(nextDateStr, nextShiftNum);
+    return !!nextShift?.isSaved;
+  };
 
+  const executeSave = async () => {
     setIsSaving(true);
     try {
+      const shiftPayload = { price, rows, totals, carryoverApplied: !!carryoverData };
       const result = await onSave(date, shiftNumber, shiftPayload);
       if (result?.carryoverUpdated) {
         setBanner(`Shift ${shiftNumber < 3 ? shiftNumber + 1 : '1 (next day)'}'s opening readings have been updated`);
@@ -156,6 +192,50 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    const shiftPayload = { price, rows, totals, carryoverApplied: !!carryoverData };
+    const errors = validateShift(shiftPayload);
+
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      setShowErrorModal(true);
+      return;
+    }
+
+    const hasSubsequent = await checkSubsequentShift();
+    if (hasSubsequent) {
+      setShowCascadeWarning(true);
+    } else {
+      await executeSave();
+    }
+  };
+
+  const handleTriggerCashPartyPopup = (rowIndex) => {
+    setCashPartyRowIndex(rowIndex);
+    setShowCashPartyModal(true);
+  };
+
+  const handleSelectParty = (party) => {
+    setRows(prev => prev.map((r, i) => i === cashPartyRowIndex ? {
+      ...r,
+      partyId: party.id,
+      partyName: party.name,
+    } : r));
+    setShowCashPartyModal(false);
+    setCashPartyRowIndex(null);
+  };
+
+  const handleCancelParty = () => {
+    setRows(prev => prev.map((r, i) => i === cashPartyRowIndex ? {
+      ...r,
+      cashParty: 0,
+      partyId: null,
+      partyName: null,
+    } : r));
+    setShowCashPartyModal(false);
+    setCashPartyRowIndex(null);
   };
 
   const isSaved = shiftData?.isSaved;
@@ -172,7 +252,6 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
         readOnly={!isWritable}
       />
 
-      {/* Carryover banner */}
       {banner && (
         <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border border-warning text-amber-800 text-sm">
           <span>⚠️ {banner}</span>
@@ -180,23 +259,21 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
         </div>
       )}
 
-      {/* Save success animation */}
       {showSaveSuccess && (
         <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-green-50 border-b border-green-200 animate-fade-in">
-          <svg className="h-5 w-5 text-success animate-check-in" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+          <svg className="h-5 w-5 text-green-600 animate-check-in" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <span className="text-sm font-semibold text-green-700">Shift {shiftNumber} saved successfully!</span>
         </div>
       )}
 
-      {/* Data grid */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto min-h-[320px]">
         <table className="w-full min-w-[1100px]">
           <thead>
-            <tr className="bg-adani-navy text-white">
-              <th className="px-2 py-3 text-left text-xs font-semibold w-[150px]">Nozzle</th>
-              <th className="px-2 py-3 text-left text-xs font-semibold w-[180px]">Employee</th>
+            <tr className="bg-adani-navy text-white text-left">
+              <th className="px-2 py-3 text-xs font-semibold w-[150px] sticky left-0 z-20 bg-adani-navy border-l-[3px] border-transparent">Nozzle</th>
+              <th className="px-2 py-3 text-xs font-semibold w-[180px] sticky left-[150px] z-20 bg-adani-navy border-r border-white/20">Employee</th>
               <th className="px-2 py-3 text-right text-xs font-semibold w-[130px]">Opening</th>
               <th className="px-2 py-3 text-right text-xs font-semibold w-[130px]">Closing</th>
               <th className="px-2 py-3 text-right text-xs font-semibold w-[110px]">Diff (KG)</th>
@@ -221,6 +298,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                 price={price}
                 onChange={handleRowChange}
                 onOpenNotesModal={handleOpenNotesModal}
+                onTriggerCashPartyPopup={handleTriggerCashPartyPopup}
                 readOnly={!isWritable}
                 errors={validationErrors.find((e) => e.rowIndex === i + 1)?.errors}
               />
@@ -230,7 +308,6 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
         </table>
       </div>
 
-      {/* Action buttons */}
       <div className="flex items-center justify-end gap-3 px-4 py-4 border-t border-gray-100">
         {readOnly && (
           <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-adani-gray rounded-full">
@@ -260,7 +337,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
         <div className="space-y-3 max-h-80 overflow-y-auto">
           {validationErrors.map((rowErr, i) => (
             <div key={i} className="p-3 bg-red-50 rounded-lg border border-red-200">
-              <p className="text-sm font-semibold text-error mb-1">
+              <p className="text-sm font-semibold text-adani-red mb-1">
                 {rowErr.nozzle} (Row {rowErr.rowIndex})
               </p>
               <ul className="list-disc list-inside text-xs text-red-700 space-y-0.5">
@@ -308,7 +385,6 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                 Employee: <span className="font-semibold text-gray-800">{selectedRow?.employeeName || 'Unassigned'}</span>
               </div>
 
-              {/* Notes grid */}
               <div className="space-y-2">
                 <div className="grid grid-cols-3 text-xs font-semibold text-gray-500 px-2 pb-1 border-b border-gray-100">
                   <span>Denomination</span>
@@ -354,10 +430,9 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                 })}
               </div>
 
-              {/* Comparison Section */}
               <div className="mt-4 p-3 bg-gray-50 rounded-lg space-y-1.5 text-sm border border-gray-100">
                 <div className="flex justify-between text-gray-600">
-                  <span>Expected Cash (Sales - CC - UPI - Cash Party):</span>
+                  <span>Expected Cash:</span>
                   <span className="font-semibold text-gray-900">₹{expectedCash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-gray-600">
@@ -372,7 +447,6 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                 </div>
               </div>
 
-              {/* Footer Actions */}
               <div className="flex items-center justify-between pt-2">
                 {isWritable ? (
                   <button
@@ -437,6 +511,43 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
           </Modal>
         );
       })()}
+
+      {/* Cash Party selection popup */}
+      <CashPartyPopup
+        isOpen={showCashPartyModal}
+        onClose={() => setShowCashPartyModal(false)}
+        onSelect={handleSelectParty}
+        onCancel={handleCancelParty}
+      />
+
+      {/* Cascade Warning Modal */}
+      <Modal
+        isOpen={showCascadeWarning}
+        onClose={() => setShowCascadeWarning(false)}
+        title="Cascade Carryover Warning"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Subsequent shifts have already been saved. Editing and saving this shift will cascade and update the opening readings of those shifts.
+          </p>
+          <p className="text-sm font-semibold text-adani-red">
+            Do you want to continue?
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="ghost" onClick={() => setShowCascadeWarning(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setShowCascadeWarning(false);
+                await executeSave();
+              }}
+            >
+              Confirm & Save
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -68,39 +68,36 @@ const DashboardPage = () => {
   // Compute carryover data
   useEffect(() => {
     const checkCarryover = async () => {
-      const currentShift = shiftData[activeShift];
-      if (!currentShift) {
-        let carryover = null;
-        if (activeShift === 1) {
-          // Carryover from previous day's Shift 3
-          const prevDate = getPreviousDateStr(selectedDate);
-          const prevShift3 = await getShift(prevDate, 3);
-          if (prevShift3?.rows) {
-            carryover = prevShift3.rows.map((r) => ({
-              openingReading: r.closingReading,
-            }));
-          }
-          if (prevShift3?.price) {
-            carryover = carryover || [];
-            carryover.price = prevShift3.price;
-          }
-        } else {
-          // Carryover from previous shift same day
-          const prevShift = shiftData[activeShift - 1];
-          if (prevShift?.rows) {
-            carryover = prevShift.rows.map((r) => ({
-              openingReading: r.closingReading,
-            }));
-          }
-          if (prevShift?.price) {
-            carryover = carryover || [];
-            carryover.price = prevShift.price;
-          }
+      let carryover = null;
+      if (activeShift === 1) {
+        // Carryover from previous day's Shift 3
+        const prevDate = getPreviousDateStr(selectedDate);
+        const prevShift3 = await getShift(prevDate, 3);
+        if (prevShift3?.rows) {
+          carryover = prevShift3.rows.map((r) => ({
+            nozzleId: r.nozzleId,
+            openingReading: r.closingReading,
+          }));
         }
-        setCarryoverData(carryover);
+        if (prevShift3?.price) {
+          carryover = carryover || [];
+          carryover.price = prevShift3.price;
+        }
       } else {
-        setCarryoverData(null);
+        // Carryover from previous shift same day
+        const prevShift = shiftData[activeShift - 1];
+        if (prevShift?.rows) {
+          carryover = prevShift.rows.map((r) => ({
+            nozzleId: r.nozzleId,
+            openingReading: r.closingReading,
+          }));
+        }
+        if (prevShift?.price) {
+          carryover = carryover || [];
+          carryover.price = prevShift.price;
+        }
       }
+      setCarryoverData(carryover);
     };
     checkCarryover();
   }, [selectedDate, activeShift, shiftData]);
@@ -122,7 +119,7 @@ const DashboardPage = () => {
     await loadCalendar();
 
     // Force-update carryover on next shift
-    const carryoverUpdated = await forceUpdateCarryover(date, shiftNum, shiftPayload.rows);
+    const carryoverUpdated = await forceUpdateCarryover(date, shiftNum, shiftPayload.rows, shiftPayload.price);
 
     // Reload all shifts to get the updated carryover values in subsequent shifts
     await loadAllShifts(date);

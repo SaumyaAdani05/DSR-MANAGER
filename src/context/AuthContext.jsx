@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { getSession, loginOwner, logoutOwner } from '../services/authService';
+import { getSession, loginOwner, logoutOwner } from '../services/authService.js';
 
 const AuthContext = createContext(null);
 
@@ -15,11 +15,20 @@ export const AuthProvider = ({ children }) => {
   const [isReadOnly, setIsReadOnly] = useState(false);
 
   useEffect(() => {
-    const existingSession = getSession();
-    if (existingSession) {
-      setSession(existingSession);
-    }
-    setLoading(false);
+    const initAuth = async () => {
+      try {
+        const existingSession = await getSession();
+        if (existingSession) {
+          setSession(existingSession);
+        }
+      } catch (err) {
+        console.error('Failed to initialize session:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
   }, []);
 
   const login = async (username, password) => {
@@ -28,8 +37,8 @@ export const AuthProvider = ({ children }) => {
     return newSession;
   };
 
-  const logout = () => {
-    logoutOwner();
+  const logout = async () => {
+    await logoutOwner();
     setSession(null);
   };
 

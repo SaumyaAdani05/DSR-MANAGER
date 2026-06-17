@@ -57,9 +57,13 @@ DSR Manager is a web-based Progressive Web App (PWA) built for gas station owner
 | Station Name | Memnagar CNG (editable in Settings) |
 | Default Login | Username: `Adani0510` / Password: `Adani@mem0510` |
 | Platform | Web (PWA — installable on PC desktop) |
-| Hosting | Vercel (free tier, vercel.app subdomain) |
+| Hosting | Vercel (free tier — vercel.app subdomain) |
 | Local Database | Dexie.js (IndexedDB — offline storage) |
-| Cloud Database | Supabase (free tier — PostgreSQL sync) |
+| Cloud Database | Supabase (free tier — PostgreSQL + cloud sync) |
+| Authentication | Custom (bcrypt via Supabase — no third-party auth needed) |
+| Version Control | GitHub (free) |
+| DNS | Cloudflare (free) |
+| Error Tracking | Sentry (free tier) |
 | Currency | Indian Rupee (₹) |
 | Number Format | Indian (e.g., ₹1,23,456.78) |
 | Date Format | DD/MM/YYYY |
@@ -108,6 +112,9 @@ DSR Manager is a web-based Progressive Web App (PWA) built for gas station owner
 #### 6.2.2 Side Drawer (slides from right)
 Contains:
 - Calendar
+- Bills
+- Party Management
+- Attendance
 - Export DSR
 - Monthly Report
 - Settings
@@ -307,7 +314,90 @@ Row: Nozzle → Employee → Opening → Closing → Cash → CC → UPI → Cas
 
 ---
 
-### 6.12 Monthly Report
+### 6.12 Cash Party & Party Management
+
+#### 6.12.1 Party List
+- Global list of parties (like employees — add/remove from Settings)
+- Accessible as a **separate section** in the hamburger menu: "Party Management"
+- Max parties: no hard limit (reasonable use)
+- Soft delete: `isActive: false` — historical records still show party name (greyed)
+- Deleted party name still appears in old bills (greyed text)
+
+#### 6.12.2 Party Name Popup (in Shift Grid)
+- When owner enters a Cash Party amount > 0 in any row, a popup appears immediately
+- Popup contains a searchable dropdown of active parties
+- Party name is **mandatory** when Cash Party > 0 — cannot save without it
+- Same party can be assigned to multiple rows in the same shift
+- Popup auto-closes after party is selected
+- Selected party name shown as a small badge/label below the Cash Party amount in the row
+
+#### 6.12.3 Party Column in Grid
+- Cash Party column shows: amount + party name badge below it
+- If no Cash Party amount: party name field hidden
+
+---
+
+### 6.13 Bill Section (Hamburger Menu → "Bills")
+
+#### 6.13.1 Landing View
+- Lists all parties with:
+  - Party name
+  - Total outstanding (unpaid) Cash Party amount
+  - Last transaction date
+  - Quick "View Bill" button per party
+
+#### 6.13.2 Daily Bill
+- Owner selects a date
+- Shows **all parties** who had Cash Party entries on that day
+- Per party: total Diff (KG), total Sales (₹), total Cash Party amount for the day
+- Paid/Unpaid status per party for that day
+
+#### 6.13.3 Monthly / Date Range Bill (per party)
+- Owner selects a specific party from dropdown
+- Owner selects date range (start date → end date) or full month
+- Shows **day-by-day breakdown**:
+  - Columns: Date | Diff (KG) | Sales (₹) | Cash Party (₹) | Status | Payment Date
+- Grand total row at bottom
+- Partial payments shown per row
+
+#### 6.13.4 Payment Status
+- Each Cash Party transaction has a status: **Pending** or **Paid**
+- Owner can mark individual transactions as **Paid** with a button
+- Partial payment supported: owner enters amount paid → system records partial payment
+- Payment date recorded when marked as paid
+- Outstanding balance shown per transaction and in total
+
+#### 6.13.5 Bill Number
+- Auto-generated on bill creation: `BILL-001`, `BILL-002` etc. (sequential, global)
+- Shown on all exported bills
+
+#### 6.13.6 Bill Export — PDF (Formal Invoice)
+- Formal invoice layout includes:
+  - Station name + "Memnagar CNG" header
+  - Bill number (e.g., BILL-042)
+  - Bill date (generated date)
+  - Date range covered
+  - Party name
+  - Table: Date | Diff (KG) | Sales (₹) | Cash Party (₹) | Status | Payment Date
+  - Grand total row
+  - Outstanding balance
+  - Print-friendly layout (clean white bg, no colored UI elements)
+- Filename: `BILLNUMBER_PartyName_DSR.pdf` (e.g., `BILL042_RameshTrucking_DSR.pdf`)
+
+#### 6.13.7 Bill Export — Excel
+- One sheet per party
+- Same columns as PDF table
+- Grand total row at bottom
+- Filename: `PartyName_Bills_DDMMYYYY.xlsx`
+
+#### 6.13.8 Printable Layout
+- "Print" button on bill view
+- Opens browser print dialog with print-optimized CSS
+- No UI chrome (no header, sidebar, nav) in print output
+
+---
+
+### 6.15 Monthly Report
 
 - Accessible from hamburger menu → "Monthly Report"
 - Opens as popup modal
@@ -319,14 +409,103 @@ Row: Nozzle → Employee → Opening → Closing → Cash → CC → UPI → Cas
 
 ---
 
-### 6.13 Data Retention
+### 6.20 Data Retention
 
 - Records older than 60 days auto-deleted silently from both local (Dexie) and cloud (Supabase)
 - Deletion runs on every login
 
 ---
 
-### 6.14 PWA
+### 6.17 Attendance System
+
+#### 6.17.1 How Attendance is Marked
+- Attendance is **auto-marked** when an employee is assigned to any shift row and that shift is saved
+- Only **present** employees are tracked — no manual absent marking
+- If an employee appears in **multiple rows of the same shift** (e.g., assigned to N1 and N2 in Shift 1) → counted as **1 shift attendance** for that shift
+- If an employee works **multiple shifts in the same day** (e.g., Shift 1 and Shift 2) → counted as **2 shift attendances**
+- Attendance is **editable** by the owner at any time (no locking)
+
+#### 6.17.2 Per Shift Wage
+- A single global **Per Shift Wage** input (₹) applies to all employees equally
+- Set and editable in the **Attendance section** directly
+- Used for all payroll calculations
+
+#### 6.17.3 Attendance Section (Hamburger → "Attendance")
+- Landing view shows a **date range picker** (start → end date, or select full month)
+- Displays monthly attendance register:
+  - **Rows:** Employee names
+  - **Columns:** Dates (1–31)
+  - **Each cell:** Shift numbers worked that day (e.g., "1", "1,2", "1,2,3", blank if absent)
+- At the end of each row (rightmost columns):
+  - Total Shifts Worked
+  - Total Wage (Shifts × Per Shift Wage)
+  - Total Advance Given
+  - Deduction Amount (owner-controlled per month)
+  - Net Payable (Total Wage − Deduction)
+  - Status: **Paid / Remaining**
+
+#### 6.17.4 Payroll Calculation
+- Formula: **Net Payable = (Total Shifts × Per Shift Wage) − Deduction Amount**
+- If Net Payable is negative → show negative value in red (allowed, not blocked)
+- Payroll calculable for any custom date range owner selects
+- "Pay Now" button per employee row → records payment with date
+- Shows **Remaining** if not yet paid
+
+#### 6.17.5 Salary Payment Tracking
+- Each employee has a **payment status** per month/period: Paid / Remaining
+- "Pay Now" button → popup to confirm payment → records payment date
+- Net Payable after deduction is what gets paid
+- Payment date stored per employee per period
+
+#### 6.17.6 Attendance Reports
+- **Monthly report:** Traditional register layout (exportable as PDF + Excel)
+- **Custom date range report:** Same register layout for selected range
+- PDF: clean print-friendly format with station name header
+- Excel: traditional register (employees as rows, dates as columns, totals at end)
+
+---
+
+### 6.18 Advance Management
+
+#### 6.18.1 Recording Advances
+- Owner manually enters advances in the **Attendance section**
+- "Add Advance" button per employee → popup:
+  - Amount (₹)
+  - Date advance was given
+  - Note (optional)
+- Multiple advances allowed per employee per month
+- Advance can be given **any day**, independent of whether employee worked that day
+
+#### 6.18.2 Advance Deduction
+- Each month/period, owner sets a **Deduction Amount** per employee:
+  - How much of the advance to deduct from this period's salary
+  - Remaining advance carries over to next period if not fully deducted
+- Formula: **Net Payable = (Shifts × Wage) − Deduction Amount**
+- If Deduction > Earned Wage → Net Payable goes negative (shown in red)
+
+#### 6.18.3 Advance History (per employee)
+- Clicking an employee name in the attendance register opens their **profile view**:
+  - All advances given (date, amount, note)
+  - All salary payments made (date, amount)
+  - Total advance outstanding (total given − total deducted so far)
+  - Running balance
+
+#### 6.18.4 Monthly Register Columns
+| Column | Description |
+|--------|-------------|
+| Employee Name | Employee name |
+| Date 1–31 | Shift numbers worked (e.g., "1,2") or blank |
+| Total Shifts | Count of all shifts worked in period |
+| Total Wage | Total Shifts × Per Shift Wage |
+| Advance Given | Total advances given in this period |
+| Deduction | Owner-entered deduction amount for this period |
+| Net Payable | Total Wage − Deduction |
+| Status | Paid / Remaining |
+| Pay Button | "Pay Now" or ✓ (if paid) |
+
+---
+
+### 6.19 PWA
 
 | Property | Value |
 |----------|-------|

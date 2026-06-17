@@ -1,7 +1,7 @@
-import { MAX_NOZZLES, MAX_EMPLOYEES } from '../utils/constants';
+import { MAX_NOZZLES, MAX_EMPLOYEES } from '../utils/constants.js';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db/localDB';
-import { queueSync } from './syncService';
+import { db } from '../db/localDB.js';
+import { queueSync } from './syncService.js';
 
 export const getSettings = async () => {
   let settings = await db.settings.get('main');
