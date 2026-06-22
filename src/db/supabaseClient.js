@@ -9,8 +9,14 @@ let cachedKey = null;
 export const getSupabaseClient = async () => {
   try {
     // 1. Try to load from environment variables first
-    const envUrl = (import.meta.env?.VITE_SUPABASE_URL) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : undefined);
-    const envKey = (import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined);
+    const envUrl = (import.meta.env?.VITE_SUPABASE_URL) || 
+                   (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : undefined) || 
+                   'https://jwuwynpqxdacwgutndvg.supabase.co';
+    const envKey = (import.meta.env?.VITE_SUPABASE_ANON_KEY) || 
+                   (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined) || 
+                   'sb_publishable_XGcnEwEw_fXhMhEhgjbxXg_N-t0biLd';
+
+    console.log('getSupabaseClient debug:', { envUrl, envKey: envKey ? '***' + envKey.slice(-5) : undefined });
 
     if (envUrl && envKey) {
       if (cachedClient && cachedUrl === envUrl && cachedKey === envKey) {
