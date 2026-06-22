@@ -11,7 +11,7 @@ global.localStorage = {
 };
 
 // Import code to test
-import { validatePassword, validateRow, validateShift } from './src/utils/validators.js';
+import { validatePassword, validateRow, validateShift, validateDailyRecord } from './src/utils/validators.js';
 import { sanitizeCellVal } from './src/services/exportService.js';
 import { checkLockout, recordFailure, resetAttempts } from './src/utils/rateLimiter.js';
 
@@ -93,6 +93,33 @@ test('Row validation - input boundaries & reconciliation', () => {
   const negErrors = validateRow(negativePaymentRow, 0);
   assert.notStrictEqual(negErrors, null, 'Negative payments must be rejected');
   assert.ok(negErrors.errors.some(e => e.message.includes('CC cannot be negative')));
+
+  // Negative expense value for daily record
+  const negativeExpenseRecord = {
+    expenses: [{ amount: -50.0, note: 'Tea' }],
+    cms: 100.0
+  };
+  const negExpenseErrors = validateDailyRecord(negativeExpenseRecord);
+  assert.ok(negExpenseErrors.length > 0, 'Negative expense must be rejected');
+  assert.ok(negExpenseErrors.some(e => e.includes('amount cannot be negative')), 'Expected negative amount error');
+
+  // Missing expense description for positive amount
+  const missingNoteRecord = {
+    expenses: [{ amount: 50.0, note: '' }],
+    cms: 100.0
+  };
+  const missingNoteErrors = validateDailyRecord(missingNoteRecord);
+  assert.ok(missingNoteErrors.length > 0, 'Missing note for positive expense must be rejected');
+  assert.ok(missingNoteErrors.some(e => e.includes('description is required')), 'Expected description required error');
+
+  // Negative CMS value for daily record
+  const negativeCMSRecord = {
+    expenses: [{ amount: 50.0, note: 'Tea' }],
+    cms: -100.0
+  };
+  const negCMSErrors = validateDailyRecord(negativeCMSRecord);
+  assert.ok(negCMSErrors.length > 0, 'Negative CMS must be rejected');
+  assert.ok(negCMSErrors.some(e => e.includes('CMS cannot be negative')), 'Expected negative CMS error');
 
   // Mismatch reconciliation (payments != sales)
   const unreconciledRow = {

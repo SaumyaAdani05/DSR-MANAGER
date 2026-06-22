@@ -100,7 +100,7 @@ export default function PartyManagementPage() {
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-adani-navy">Party Management</h1>
-          <Button variant="ghost" onClick={() => navigate('/')}>\u2190 Back to Dashboard</Button>
+          <Button variant="ghost" onClick={() => navigate('/')}>← Back to Dashboard</Button>
         </div>
 
         {/* Add Party */}

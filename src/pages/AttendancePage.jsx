@@ -161,7 +161,7 @@ export default function AttendancePage() {
               PDF Export
             </Button>
             <Button variant="ghost" onClick={() => navigate('/')}>
-              \u2190 Back to Dashboard
+              ← Back to Dashboard
             </Button>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function AttendancePage() {
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-40">
               <label htmlFor="per-shift-wage" className="block text-xs font-semibold text-gray-700 mb-1.5">
-                Per Shift Wage (\u20B9)
+                Per Shift Wage (₹)
               </label>
               <Input
                 id="per-shift-wage"
@@ -181,7 +181,7 @@ export default function AttendancePage() {
                 value={wage || ''}
                 onChange={(e) => setWage(parseFloat(e.target.value) || 0)}
                 onBlur={handleWageBlur}
-                placeholder="\u20B9300"
+                placeholder="₹300"
               />
             </div>
             <div className="w-44">
@@ -343,7 +343,7 @@ export default function AttendancePage() {
                             </button>
                           ) : (
                             <span className="text-[10px] text-green-600 font-bold flex items-center gap-0.5">
-                              \u2713 Paid
+                              ✓ Paid
                             </span>
                           )}
                         </div>

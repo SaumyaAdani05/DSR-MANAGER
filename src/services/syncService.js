@@ -159,6 +159,15 @@ const mapToSupabase = (tableName, payload, userId) => {
       updated_at: payload.updatedAt || payload.updated_at || new Date().toISOString(),
     };
   }
+  if (tableName === 'daily_records') {
+    return {
+      date: payload.date,
+      user_id: userId,
+      expenses: payload.expenses || [],
+      cms: parseFloat(payload.cms || 0),
+      updated_at: payload.updatedAt || new Date().toISOString(),
+    };
+  }
   return { ...payload, user_id: userId };
 };
 
@@ -299,6 +308,14 @@ const mapFromSupabase = (tableName, row) => {
       updatedAt: row.updated_at,
     };
   }
+  if (tableName === 'daily_records') {
+    return {
+      date: row.date,
+      expenses: row.expenses || [],
+      cms: parseFloat(row.cms),
+      updatedAt: row.updated_at,
+    };
+  }
   return row;
 };
 
@@ -343,7 +360,7 @@ export const runSync = async () => {
         if (item.tableName === 'shifts') {
           const parts = item.recordId.split('_');
           query = query.eq('date', parts[0]).eq('shift_number', parseInt(parts[1]));
-        } else if (item.tableName === 'calendar') {
+        } else if (item.tableName === 'calendar' || item.tableName === 'daily_records') {
           query = query.eq('date', item.recordId);
         } else if (item.tableName === 'attendance') {
           const parts = item.recordId.split('_');
@@ -365,7 +382,7 @@ export const runSync = async () => {
     // Pull remote changes (inbound pull)
     const tables = [
       'settings', 'nozzles', 'employees', 'shifts', 'calendar',
-      'parties', 'cash_party_entries', 'attendance_settings', 'attendance', 'advances', 'salary_payments', 'bill_counter', 'auth'
+      'parties', 'cash_party_entries', 'attendance_settings', 'attendance', 'advances', 'salary_payments', 'bill_counter', 'auth', 'daily_records'
     ];
     for (const table of tables) {
       const lastPull = localStorage.getItem(`lastPull_${table}`) || '1970-01-01T00:00:00.000Z';
@@ -436,6 +453,8 @@ export const runSync = async () => {
             await db.billCounter.put(localRow);
           } else if (table === 'auth') {
             await db.auth.put(localRow);
+          } else if (table === 'daily_records') {
+            await db.dailyRecords.put(localRow);
           }
         }
       }

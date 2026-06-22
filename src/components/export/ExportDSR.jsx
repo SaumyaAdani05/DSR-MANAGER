@@ -4,6 +4,7 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { exportDSR, checkAllShiftsComplete } from '../../services/exportService';
 import { getAllShiftsForDate } from '../../services/shiftService';
+import { getDailyRecord } from '../../services/dailyRecordService';
 import { getTodayStr } from '../../utils/dateUtils';
 import { formatDisplayDate } from '../../utils/formatters';
 
@@ -26,7 +27,8 @@ const ExportDSR = ({ isOpen, onClose, stationName }) => {
       }
 
       const { shift1, shift2, shift3 } = result.shifts;
-      exportDSR(selectedDate, shift1, shift2, shift3, stationName);
+      const dailyRecord = await getDailyRecord(selectedDate);
+      exportDSR(selectedDate, shift1, shift2, shift3, stationName, dailyRecord);
       toast.success('DSR exported successfully');
       onClose();
     } catch (error) {

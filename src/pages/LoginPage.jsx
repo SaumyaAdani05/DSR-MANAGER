@@ -75,7 +75,7 @@ const LoginPage = () => {
         className="relative z-10 mt-8 text-xs text-blue-200/50 text-center animate-fade-in-up"
         style={{ animationDelay: '200ms', animationFillMode: 'both' }}
       >
-        Gas Station DSR Manager &middot; v1.0
+        Gas Station DSR Manager &middot; v3.0
       </p>
     </div>
   );

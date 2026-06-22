@@ -451,3 +451,28 @@ DROP TRIGGER IF EXISTS audit_auth ON public.auth;
 CREATE TRIGGER audit_auth
   AFTER INSERT OR UPDATE OR DELETE ON public.auth
   FOR EACH ROW EXECUTE FUNCTION public.process_audit_logging();
+
+-- ========================================================
+-- 6. DAILY RECORDS TABLE SETUP (EXPENSES & CMS)
+-- ========================================================
+
+CREATE TABLE IF NOT EXISTS public.daily_records (
+  date VARCHAR(10) NOT NULL CHECK (date ~ '^\d{4}-\d{2}-\d{2}$'),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  expenses JSONB NOT NULL DEFAULT '[]',
+  cms DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (cms >= 0),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (date, user_id)
+);
+
+ALTER TABLE public.daily_records ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can only access their own daily records" ON public.daily_records;
+CREATE POLICY "Users can only access their own daily records" ON public.daily_records
+  FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP TRIGGER IF EXISTS audit_daily_records ON public.daily_records;
+CREATE TRIGGER audit_daily_records
+  AFTER INSERT OR UPDATE OR DELETE ON public.daily_records
+  FOR EACH ROW EXECUTE FUNCTION public.process_audit_logging();
+

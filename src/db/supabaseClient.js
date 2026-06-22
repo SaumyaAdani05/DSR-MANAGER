@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { db } from './localDB';
+
+let dbModule = null;
 
 let cachedClient = null;
 let cachedUrl = null;
@@ -8,8 +9,8 @@ let cachedKey = null;
 export const getSupabaseClient = async () => {
   try {
     // 1. Try to load from environment variables first
-    const envUrl = import.meta.env.VITE_SUPABASE_URL;
-    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const envUrl = (import.meta.env?.VITE_SUPABASE_URL) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : undefined);
+    const envKey = (import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined);
 
     if (envUrl && envKey) {
       if (cachedClient && cachedUrl === envUrl && cachedKey === envKey) {
@@ -22,7 +23,10 @@ export const getSupabaseClient = async () => {
     }
 
     // 2. Fall back to settings in database
-    const settings = await db.settings.get('main');
+    if (!dbModule) {
+      dbModule = await import('./localDB.js');
+    }
+    const settings = await dbModule.db.settings.get('main');
     if (!settings?.supabaseUrl || !settings?.supabaseKey) return null;
 
     if (cachedClient && cachedUrl === settings.supabaseUrl && cachedKey === settings.supabaseKey) {

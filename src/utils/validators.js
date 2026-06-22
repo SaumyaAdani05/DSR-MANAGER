@@ -65,3 +65,24 @@ export const getPasswordErrors = (password) => {
   if (!/[@#$]/.test(password)) errors.push('At least one special character (@, #, $)');
   return errors;
 };
+
+export const validateDailyRecord = (record) => {
+  const errors = [];
+  if (record.expenses && Array.isArray(record.expenses)) {
+    record.expenses.forEach((exp, idx) => {
+      const amt = parseFloat(exp.amount);
+      if (isNaN(amt)) {
+        errors.push(`Expense #${idx + 1} amount must be a number`);
+      } else if (amt < 0) {
+        errors.push(`Expense #${idx + 1} amount cannot be negative`);
+      }
+      if (amt > 0 && (!exp.note || !exp.note.trim())) {
+        errors.push(`Expense #${idx + 1} description is required when amount is greater than 0`);
+      }
+    });
+  }
+  if (record.cms < 0) {
+    errors.push('CMS cannot be negative');
+  }
+  return errors;
+};

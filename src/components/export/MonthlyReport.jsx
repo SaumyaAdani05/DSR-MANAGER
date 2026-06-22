@@ -51,8 +51,10 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
           totalCC: acc.totalCC + r.totalCC,
           totalUPI: acc.totalUPI + r.totalUPI,
           totalCashParty: acc.totalCashParty + r.totalCashParty,
+          totalExpense: acc.totalExpense + (r.totalExpense || 0),
+          totalCMS: acc.totalCMS + (r.totalCMS || 0),
         }),
-        { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0, totalCashParty: 0 }
+        { totalDifference: 0, totalSalesRs: 0, totalCash: 0, totalCC: 0, totalUPI: 0, totalCashParty: 0, totalExpense: 0, totalCMS: 0 }
       );
       setGrandTotals(totals);
     } catch (error) {
@@ -109,6 +111,8 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                   <th className="px-3 py-2 text-right font-semibold">CC</th>
                   <th className="px-3 py-2 text-right font-semibold">UPI</th>
                   <th className="px-3 py-2 text-right font-semibold">Cash Party</th>
+                  <th className="px-3 py-2 text-right font-semibold">Expense</th>
+                  <th className="px-3 py-2 text-right font-semibold">CMS</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,6 +125,8 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalCC)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalUPI)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.totalCashParty)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(row.totalExpense || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(row.totalCMS || 0)}</td>
                   </tr>
                 ))}
                 {grandTotals && (
@@ -132,6 +138,8 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCC)}</td>
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalUPI)}</td>
                     <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCashParty)}</td>
+                    <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalExpense)}</td>
+                    <td className="px-3 py-2 text-right text-adani-navy">{formatNumber(grandTotals.totalCMS)}</td>
                   </tr>
                 )}
               </tbody>
