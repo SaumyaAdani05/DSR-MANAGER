@@ -93,6 +93,30 @@ db.version(2).stores({
   }
 });
 
+db.version(3).stores({
+  dailyRecords: '&date, expense, expenseNote, cms, updatedAt',
+});
+
+db.version(4).stores({
+  dailyRecords: '&date, cms, updatedAt',
+}).upgrade(async (tx) => {
+  await tx.table('dailyRecords').toCollection().modify(record => {
+    if (record.expense !== undefined || record.expenseNote !== undefined) {
+      record.expenses = [];
+      const oldAmount = parseFloat(record.expense) || 0;
+      if (oldAmount > 0) {
+        record.expenses.push({
+          amount: oldAmount,
+          note: record.expenseNote || ''
+        });
+      }
+      delete record.expense;
+      delete record.expenseNote;
+    }
+  });
+});
+
+
 // Seed default owner settings on creation
 db.on('populate', (tx) => {
   const defaultHash = bcrypt.hashSync('Adani@mem0510', 10);

@@ -234,9 +234,9 @@ export default function ForgotPassword() {
                   <li key={idx} className="flex items-center gap-2 text-[11px]">
                     {newPassword.length > 0 ? (
                       passes ? (
-                        <span className="text-green-600 font-bold">\u2713</span>
+                        <span className="text-green-600 font-bold">✓</span>
                       ) : (
-                        <span className="text-red-500 font-bold">\u2717</span>
+                        <span className="text-red-500 font-bold">✗</span>
                       )
                     ) : (
                       <span className="h-3 w-3 rounded-full border border-gray-350 shrink-0 bg-white" />
@@ -325,7 +325,7 @@ export default function ForgotPassword() {
             className="text-sm text-adani-navy hover:text-adani-navyLight underline
                        focus:outline-none focus:ring-2 focus:ring-adani-navy rounded"
           >
-            \u2190 Back to Login
+            ← Back to Login
           </Link>
         </div>
       </div>

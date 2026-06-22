@@ -38,6 +38,8 @@ export default function CalendarPage() {
     totalCC: 0,
     totalUPI: 0,
     totalCashParty: 0,
+    totalExpense: 0,
+    totalCMS: 0,
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -59,6 +61,8 @@ export default function CalendarPage() {
           totalCC: acc.totalCC + (r.totalCC || 0),
           totalUPI: acc.totalUPI + (r.totalUPI || 0),
           totalCashParty: acc.totalCashParty + (r.totalCashParty || 0),
+          totalExpense: acc.totalExpense + (r.totalExpense || 0),
+          totalCMS: acc.totalCMS + (r.totalCMS || 0),
         }),
         {
           totalDifference: 0,
@@ -67,6 +71,8 @@ export default function CalendarPage() {
           totalCC: 0,
           totalUPI: 0,
           totalCashParty: 0,
+          totalExpense: 0,
+          totalCMS: 0,
         }
       );
       setMonthlyTotals(sums);

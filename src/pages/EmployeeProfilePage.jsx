@@ -82,7 +82,7 @@ export default function EmployeeProfilePage() {
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         <div className="flex items-center justify-between no-print">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={() => navigate('/attendance')}>\u2190 Back to Register</Button>
+            <Button variant="ghost" onClick={() => navigate('/attendance')}>← Back to Register</Button>
             <h1 className="text-xl font-bold text-adani-navy">{employee?.name}'s Profile</h1>
           </div>
         </div>
@@ -122,8 +122,8 @@ export default function EmployeeProfilePage() {
                       <thead>
                         <tr className="border-b border-gray-100 text-gray-400 font-semibold pb-1.5">
                           <th className="py-1.5">Date</th>
-                          <th className="py-1.5 text-right">Amount (\u20B9)</th>
-                          <th className="py-1.5 text-right">Running (\u20B9)</th>
+                          <th className="py-1.5 text-right">Amount (₹)</th>
+                          <th className="py-1.5 text-right">Running (₹)</th>
                           <th className="py-1.5 pl-3">Note</th>
                         </tr>
                       </thead>

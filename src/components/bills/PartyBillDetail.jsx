@@ -123,7 +123,7 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between no-print">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={onBack}>\u2190 Back to List</Button>
+          <Button variant="ghost" onClick={onBack}>← Back to List</Button>
           <span className="text-xl font-bold text-adani-navy">{party.name} Bills</span>
         </div>
         <div className="flex gap-2">
@@ -197,10 +197,10 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                   <th className="py-2">Date</th>
                   <th className="py-2">Bill No</th>
                   <th className="py-2 text-right">Diff (KG)</th>
-                  <th className="py-2 text-right">Sales (\u20B9)</th>
-                  <th className="py-2 text-right">Credit (\u20B9)</th>
+                  <th className="py-2 text-right">Sales (₹)</th>
+                  <th className="py-2 text-right">Credit (₹)</th>
                   <th className="py-2 text-center w-24">Status</th>
-                  <th className="py-2 text-right">Paid (\u20B9)</th>
+                  <th className="py-2 text-right">Paid (₹)</th>
                   <th className="py-2 text-center">Pay Date</th>
                   <th className="py-2 text-center w-28 no-print">Actions</th>
                 </tr>

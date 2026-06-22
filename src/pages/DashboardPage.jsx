@@ -11,8 +11,10 @@ import ShiftGrid from '../components/shift/ShiftGrid';
 import DailySalesBar from '../components/shift/DailySalesBar';
 import ExportDSR from '../components/export/ExportDSR';
 import MonthlyReport from '../components/export/MonthlyReport';
+import DailyRecordForm from '../components/shift/DailyRecordForm';
 import { getShift, saveShift as saveShiftService, forceUpdateCarryover } from '../services/shiftService';
 import { cleanOldRecords } from '../services/cleanupService';
+import { getDailyRecord, saveDailyRecord as saveDailyRecordService } from '../services/dailyRecordService';
 import { isToday, isWithinRetention, getPreviousDateStr } from '../utils/dateUtils';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
@@ -36,6 +38,7 @@ const DashboardPage = () => {
   const navigate = useNavigate();
 
   const [carryoverData, setCarryoverData] = useState(null);
+  const [dailyRecord, setDailyRecord] = useState({ expenses: [], cms: 0 });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [monthlyOpen, setMonthlyOpen] = useState(false);
@@ -64,6 +67,19 @@ const DashboardPage = () => {
   useEffect(() => {
     loadAllShifts(selectedDate);
   }, [selectedDate, loadAllShifts]);
+
+  // Load daily record when date changes
+  useEffect(() => {
+    const loadDaily = async () => {
+      try {
+        const record = await getDailyRecord(selectedDate);
+        setDailyRecord(record || { expenses: [], cms: 0 });
+      } catch (err) {
+        console.error('Failed to load daily record:', err);
+      }
+    };
+    loadDaily();
+  }, [selectedDate]);
 
   // Compute carryover data
   useEffect(() => {
@@ -173,7 +189,18 @@ const DashboardPage = () => {
                   readOnly={isReadOnly}
                   carryoverData={carryoverData}
                 />
-                <DailySalesBar shiftData={shiftData} />
+                
+                <DailyRecordForm
+                  date={selectedDate}
+                  initialRecord={dailyRecord}
+                  onSave={async (updatedRecord) => {
+                    const saved = await saveDailyRecordService(selectedDate, updatedRecord);
+                    setDailyRecord(saved);
+                  }}
+                  readOnly={isReadOnly}
+                />
+
+                <DailySalesBar shiftData={shiftData} dailyRecord={dailyRecord} />
               </>
             )}
           </div>

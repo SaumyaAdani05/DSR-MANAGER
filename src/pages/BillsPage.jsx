@@ -81,7 +81,7 @@ export default function BillsPage() {
                 Daily Bills
               </Button>
               <Button variant="ghost" onClick={() => navigate('/')}>
-                \u2190 Back to Dashboard
+                ← Back to Dashboard
               </Button>
             </div>
           </div>

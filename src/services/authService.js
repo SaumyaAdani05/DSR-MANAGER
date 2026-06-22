@@ -1,11 +1,125 @@
 import bcrypt from 'bcryptjs';
 import { db } from '../db/localDB.js';
 import { queueSync } from './syncService.js';
+import { getSupabaseClient } from '../db/supabaseClient.js';
+
+export const loginWithGoogle = async () => {
+  if (!navigator.onLine) {
+    throw new Error('You must be online to log in with Google.');
+  }
+  const client = await getSupabaseClient();
+  if (!client) {
+    throw new Error('Supabase is not configured. Cannot log in with Google.');
+  }
+
+  const { error } = await client.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin + '/login',
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+};
+
+export const signUpOwner = async (email, password) => {
+  if (!navigator.onLine) {
+    throw new Error('You must be online to register.');
+  }
+  const client = await getSupabaseClient();
+  if (!client) {
+    throw new Error('Supabase is not configured. Cannot register.');
+  }
+
+  const { data, error } = await client.auth.signUp({ email, password });
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  // Hash password locally for offline login capability
+  const hash = await bcrypt.hash(password, 10);
+  
+  await db.auth.put({
+    id: 'owner',
+    username: email,
+    passwordHash: hash,
+    securityQuestion: '',
+    securityAnswerHash: '',
+    isFirstLogin: true,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const supabaseSession = data.session;
+  if (supabaseSession) {
+    const session = {
+      isAuthenticated: true,
+      sessionId: supabaseSession.access_token,
+      loginTime: new Date().toISOString(),
+      username: email,
+      isFirstLogin: true,
+    };
+    localStorage.setItem('dsr_session', JSON.stringify(session));
+    return { session, requiresVerification: false };
+  } else {
+    return { session: null, requiresVerification: true };
+  }
+};
 
 export const loginOwner = async (username, password) => {
+  const isEmail = username.includes('@');
+  
+  if (isEmail && navigator.onLine) {
+    const client = await getSupabaseClient();
+    if (client) {
+      const { data, error } = await client.auth.signInWithPassword({
+        email: username,
+        password,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (data?.session) {
+        // Hash password locally so offline access works with these credentials
+        const hash = await bcrypt.hash(password, 10);
+        const owner = await db.auth.get('owner');
+        
+        await db.auth.put({
+          id: 'owner',
+          username,
+          passwordHash: hash,
+          securityQuestion: owner?.securityQuestion || '',
+          securityAnswerHash: owner?.securityAnswerHash || '',
+          isFirstLogin: owner ? owner.isFirstLogin : true,
+          updatedAt: new Date().toISOString(),
+        });
+
+        const session = {
+          isAuthenticated: true,
+          sessionId: data.session.access_token,
+          loginTime: new Date().toISOString(),
+          username,
+          isFirstLogin: owner ? owner.isFirstLogin : true,
+        };
+
+        localStorage.setItem('dsr_session', JSON.stringify(session));
+        return session;
+      }
+    }
+  }
+
+  // Offline or legacy username login fallback
   const owner = await db.auth.get('owner');
   if (!owner || owner.username !== username) {
     throw new Error('Invalid username or password');
+  }
+
+  // Google OAuth users won't have local password hash if they haven't set one
+  if (!owner.passwordHash) {
+    throw new Error('This account is configured for Google Sign-In. Please sign in with Google.');
   }
 
   const match = await bcrypt.compare(password, owner.passwordHash);
@@ -27,6 +141,14 @@ export const loginOwner = async (username, password) => {
 
 export const logoutOwner = async () => {
   localStorage.removeItem('dsr_session');
+  try {
+    const client = await getSupabaseClient();
+    if (client) {
+      await client.auth.signOut();
+    }
+  } catch (err) {
+    console.error('Error signing out from Supabase:', err);
+  }
 };
 
 export const getSession = async () => {

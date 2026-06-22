@@ -9,7 +9,7 @@ const check = async () => {
 
   const tables = [
     'settings', 'nozzles', 'employees', 'shifts', 'calendar', 'audit_logs',
-    'parties', 'cash_party_entries', 'attendance_settings', 'attendance', 'advances', 'salary_payments', 'bill_counter', 'auth'
+    'parties', 'cash_party_entries', 'attendance_settings', 'attendance', 'advances', 'salary_payments', 'bill_counter', 'auth', 'daily_records'
   ];
   console.log('====================================================');
   console.log('VERIFYING SUPABASE DATABASE SCHEMA VERSION 2...');
@@ -18,7 +18,6 @@ const check = async () => {
   let failed = false;
   for (const table of tables) {
     const { error } = await supabase.from(table).select('*').limit(0);
-    
     if (error && error.code === '42P01') {
       console.error(`✗ Table "${table}" DOES NOT exist (relation not found)`);
       failed = true;

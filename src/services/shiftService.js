@@ -171,7 +171,8 @@ export const getAllShiftsForDate = async (date) => {
 
 export const getDailyTotals = async (date) => {
   const list = await db.shifts.where('date').equals(date).toArray();
-  return list.reduce(
+  const dayRecord = await db.dailyRecords.get(date);
+  const totals = list.reduce(
     (acc, shift) => ({
       totalDifference: acc.totalDifference + (shift.totals?.totalDifference || 0),
       totalSalesRs: acc.totalSalesRs + (shift.totals?.totalSalesRs || 0),
@@ -189,6 +190,13 @@ export const getDailyTotals = async (date) => {
       totalCashParty: 0,
     }
   );
+  return {
+    ...totals,
+    totalExpense: Array.isArray(dayRecord?.expenses)
+      ? dayRecord.expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+      : 0,
+    totalCMS: dayRecord?.cms || 0,
+  };
 };
 
 export const getCalendarData = async () => {
@@ -202,6 +210,12 @@ export const getMonthlyData = async (year, month) => {
 
   // Fetch all shifts in that range
   const shiftsInRange = await db.shifts
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .toArray();
+
+  // Fetch all daily records in that range
+  const dailyRecordsInRange = await db.dailyRecords
     .where('date')
     .between(startDate, endDate, true, true)
     .toArray();
@@ -222,6 +236,7 @@ export const getMonthlyData = async (year, month) => {
   for (let day = 1; day <= totalDays; day++) {
     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayShifts = groupedByDate[dateStr] || [];
+    const dayRecord = dailyRecordsInRange.find((r) => r.date === dateStr);
     
     let dayTotals = {
       totalDifference: 0,
@@ -230,6 +245,10 @@ export const getMonthlyData = async (year, month) => {
       totalCC: 0,
       totalUPI: 0,
       totalCashParty: 0,
+      totalExpense: Array.isArray(dayRecord?.expenses)
+        ? dayRecord.expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+        : 0,
+      totalCMS: dayRecord?.cms || 0,
     };
     
     // Check if shifts 1, 2, and 3 are saved

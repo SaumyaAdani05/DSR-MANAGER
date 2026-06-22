@@ -27,7 +27,7 @@ const getDatesInRange = (start, end) => {
   return dates;
 };
 
-export const exportDSR = (date, shift1, shift2, shift3, stationName) => {
+export const exportDSR = (date, shift1, shift2, shift3, stationName, dailyRecord = {}) => {
   const wb = XLSX.utils.book_new();
 
   [shift1, shift2, shift3].forEach((shift, i) => {
@@ -71,6 +71,47 @@ export const exportDSR = (date, shift1, shift2, shift3, stationName) => {
     XLSX.utils.book_append_sheet(wb, ws, shiftName);
   });
 
+  const totalCashCollected = (shift1.totals.totalCash || 0) + (shift2.totals.totalCash || 0) + (shift3.totals.totalCash || 0);
+  const expensesList = Array.isArray(dailyRecord?.expenses) ? dailyRecord.expenses : [];
+  const expenseAmount = expensesList.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+  const cmsAmount = dailyRecord?.cms || 0;
+  const netCash = totalCashCollected - expenseAmount - cmsAmount;
+
+  const summaryRows = [
+    [sanitizeCellVal(stationName)],
+    [`Date: ${formatDisplayDate(date)}`],
+    [],
+    ['DAILY BUSINESS SUMMARY'],
+    [],
+    ['Item', 'Amount (₹)', 'Notes'],
+    ['Total Sales Volume', (shift1.totals.totalDifference || 0) + (shift2.totals.totalDifference || 0) + (shift3.totals.totalDifference || 0), 'KG'],
+    ['Total Sales (₹)', (shift1.totals.totalSalesRs || 0) + (shift2.totals.totalSalesRs || 0) + (shift3.totals.totalSalesRs || 0), ''],
+    ['Credit Card Collected', (shift1.totals.totalCC || 0) + (shift2.totals.totalCC || 0) + (shift3.totals.totalCC || 0), ''],
+    ['UPI Collected', (shift1.totals.totalUPI || 0) + (shift2.totals.totalUPI || 0) + (shift3.totals.totalUPI || 0), ''],
+    ['Cash Party Total', (shift1.totals.totalCashParty || 0) + (shift2.totals.totalCashParty || 0) + (shift3.totals.totalCashParty || 0), ''],
+    ['Cash Collected', totalCashCollected, 'Total from all shifts'],
+  ];
+
+  if (expensesList.length === 0) {
+    summaryRows.push(['Daily Expense', 0, 'No expenses recorded']);
+  } else {
+    expensesList.forEach((exp, idx) => {
+      summaryRows.push([`Daily Expense #${idx + 1}`, parseFloat(exp.amount) || 0, sanitizeCellVal(exp.note || '')]);
+    });
+    summaryRows.push(['Total Expenses', expenseAmount, 'Sum of all daily expenses']);
+  }
+
+  summaryRows.push(
+    ['CMS (Bank Deposit)', cmsAmount, 'Cash deposited next day'],
+    ['Net Cash in Hand', netCash, 'Cash Collected - Total Expenses - CMS']
+  );
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  wsSummary['!cols'] = [
+    { wch: 25 }, { wch: 15 }, { wch: 30 }
+  ];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'DAILY SUMMARY');
+
   const filename = `${formatExportDate(date)}_DSR.xlsx`;
   XLSX.writeFile(wb, filename);
 };
@@ -85,7 +126,7 @@ export const exportMonthlyPDF = (monthName, year, rows, grandTotals, stationName
 
   autoTable(pdfDoc, {
     startY: 30,
-    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Cash Party']],
+    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Cash Party', 'Expense', 'CMS']],
     body: rows.map((r) => [
       formatDisplayDate(r.date),
       r.totalDifference.toFixed(2),
@@ -94,6 +135,8 @@ export const exportMonthlyPDF = (monthName, year, rows, grandTotals, stationName
       r.totalCC.toFixed(2),
       r.totalUPI.toFixed(2),
       r.totalCashParty.toFixed(2),
+      (r.totalExpense || 0).toFixed(2),
+      (r.totalCMS || 0).toFixed(2),
     ]),
     foot: [[
       'TOTAL',
@@ -103,6 +146,8 @@ export const exportMonthlyPDF = (monthName, year, rows, grandTotals, stationName
       grandTotals.totalCC.toFixed(2),
       grandTotals.totalUPI.toFixed(2),
       grandTotals.totalCashParty.toFixed(2),
+      (grandTotals.totalExpense || 0).toFixed(2),
+      (grandTotals.totalCMS || 0).toFixed(2),
     ]],
     theme: 'striped',
     headStyles: { fillColor: [0, 48, 135] },

@@ -6,7 +6,7 @@ export default function MonthlySummary({ monthName, year, totals }) {
       <h3 className="text-xs font-bold text-adani-navy uppercase tracking-wider mb-3">
         Monthly Summary — {monthName} {year}
       </h3>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
         {/* Diff */}
         <div className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
           <span className="block text-[10px] font-semibold text-gray-400 uppercase">Sales Volume</span>
@@ -52,6 +52,22 @@ export default function MonthlySummary({ monthName, year, totals }) {
           <span className="block text-[10px] font-semibold text-gray-400 uppercase">Cash Party</span>
           <span className="text-base font-bold text-adani-navy mt-0.5 block">
             ₹{formatNumber(totals.totalCashParty || 0)}
+          </span>
+        </div>
+
+        {/* Monthly Expense */}
+        <div className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+          <span className="block text-[10px] font-semibold text-gray-400 uppercase">Monthly Expense</span>
+          <span className="text-base font-bold text-amber-600 mt-0.5 block">
+            ₹{formatNumber(totals.totalExpense || 0)}
+          </span>
+        </div>
+
+        {/* CMS (Bank) */}
+        <div className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+          <span className="block text-[10px] font-semibold text-gray-400 uppercase">CMS (Bank)</span>
+          <span className="text-base font-bold text-green-600 mt-0.5 block">
+            ₹{formatNumber(totals.totalCMS || 0)}
           </span>
         </div>
       </div>
