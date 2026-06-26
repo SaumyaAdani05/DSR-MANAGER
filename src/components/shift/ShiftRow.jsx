@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { calcDifference, calcSales, isReconciled } from '../../utils/calculations.js';
 import { formatNumber } from '../../utils/formatters.js';
 import SearchDropdown from '../ui/SearchDropdown.jsx';
@@ -16,6 +17,8 @@ const ShiftRow = ({
   readOnly,
   errors,
 }) => {
+  const [isNozzleOpen, setIsNozzleOpen] = useState(false);
+  const [isEmployeeOpen, setIsEmployeeOpen] = useState(false);
   const hasError = errors && errors.length > 0;
   const reconciled = row.salesRs > 0 ? isReconciled(row) : null;
 
@@ -143,22 +146,24 @@ const ShiftRow = ({
         hover:bg-blue-50/60`}
     >
       {/* Nozzle Search Dropdown */}
-      <td className={`px-2 py-2 w-[150px] sticky left-0 z-10 ${cellBgClass} border-l-[3px] ${hasError ? 'border-l-error' : 'border-l-transparent'} transition-colors duration-100`}>
+      <td className={`px-2 py-2 w-[150px] sticky left-0 ${isNozzleOpen ? 'z-30' : 'z-10'} ${cellBgClass} border-l-[3px] ${hasError ? 'border-l-error' : 'border-l-transparent'} transition-colors duration-100`}>
         <SearchDropdown
           options={nozzleOptions}
           value={row.nozzleId || ''}
           onChange={handleNozzleSelect}
+          onOpenChange={setIsNozzleOpen}
           placeholder="Nozzle"
           disabled={readOnly}
         />
       </td>
 
       {/* Employee Search Dropdown */}
-      <td className={`px-2 py-2 w-[180px] sticky left-[150px] z-10 ${cellBgClass} border-r border-gray-200 transition-colors duration-100`}>
+      <td className={`px-2 py-2 w-[180px] sticky left-[150px] ${isEmployeeOpen ? 'z-30' : 'z-10'} ${cellBgClass} border-r border-gray-200 transition-colors duration-100`}>
         <SearchDropdown
           options={employeeOptions}
           value={row.employeeId || ''}
           onChange={handleEmployeeSelect}
+          onOpenChange={setIsEmployeeOpen}
           placeholder="Employee"
           disabled={readOnly}
         />

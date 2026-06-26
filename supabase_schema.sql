@@ -230,6 +230,7 @@ BEGIN
     CASE 
       WHEN TG_TABLE_NAME = 'shifts' THEN (COALESCE(new_val->>'date', old_val->>'date') || '_' || COALESCE(new_val->>'shift_number', old_val->>'shift_number'))
       WHEN TG_TABLE_NAME = 'calendar' THEN COALESCE(new_val->>'date', old_val->>'date')
+      WHEN TG_TABLE_NAME = 'attendance' THEN (COALESCE(new_val->>'date', old_val->>'date') || '_' || COALESCE(new_val->>'shift_number', old_val->>'shift_number') || '_' || COALESCE(new_val->>'employee_id', old_val->>'employee_id'))
       ELSE COALESCE(new_val->>'id', old_val->>'id')
     END,
     old_val,

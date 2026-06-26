@@ -7,7 +7,7 @@ export default function OfflineBanner() {
     <div
       role="alert"
       aria-live="assertive"
-      className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 bg-[#D97706] px-4 py-2 text-sm font-medium text-white shadow-md animate-fade-in"
+      className="relative z-[60] flex items-center justify-center gap-2 bg-[#D97706] px-4 py-2 text-sm font-medium text-white shadow-md animate-fade-in"
     >
       {/* Warning icon */}
       <svg

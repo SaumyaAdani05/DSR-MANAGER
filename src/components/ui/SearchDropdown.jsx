@@ -4,6 +4,7 @@ export default function SearchDropdown({
   options = [], // Array of { id, name, disabled }
   value = '',
   onChange,
+  onOpenChange,
   placeholder = 'Select option...',
   disabled = false,
   className = '',
@@ -21,13 +22,14 @@ export default function SearchDropdown({
   );
 
   useEffect(() => {
+    onOpenChange?.(isOpen);
     if (isOpen) {
       searchInputRef.current?.focus();
       setHighlightedIndex(-1);
     } else {
       setSearch('');
     }
-  }, [isOpen]);
+  }, [isOpen, onOpenChange]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
