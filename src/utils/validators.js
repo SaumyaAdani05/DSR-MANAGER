@@ -84,5 +84,18 @@ export const validateDailyRecord = (record) => {
   if (record.cms < 0) {
     errors.push('CMS cannot be negative');
   }
+  if (record.debitedCash && Array.isArray(record.debitedCash)) {
+    record.debitedCash.forEach((debit, idx) => {
+      const amt = parseFloat(debit.amount);
+      if (isNaN(amt)) {
+        errors.push(`Debit #${idx + 1} amount must be a number`);
+      } else if (amt < 0) {
+        errors.push(`Debit #${idx + 1} amount cannot be negative`);
+      }
+      if (amt > 0 && !debit.partyId) {
+        errors.push(`Debit #${idx + 1} requires a party selection`);
+      }
+    });
+  }
   return errors;
 };

@@ -113,11 +113,14 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
     }
   };
 
-  const totalDiff = entries.reduce((s, e) => s + (parseFloat(e.diffKg) || 0), 0);
-  const totalSales = entries.reduce((s, e) => s + (parseFloat(e.salesRs) || 0), 0);
-  const totalCredit = entries.reduce((s, e) => s + (parseFloat(e.cashPartyAmount) || 0), 0);
-  const totalPaid = entries.reduce((s, e) => s + (parseFloat(e.amountPaid) || 0), 0);
-  const netOutstanding = parseFloat((totalCredit - totalPaid).toFixed(2));
+  const creditEntries = entries.filter(e => e.entryType !== 'debit');
+  const debitEntries = entries.filter(e => e.entryType === 'debit');
+  const totalDiff = creditEntries.reduce((s, e) => s + (parseFloat(e.diffKg) || 0), 0);
+  const totalSales = creditEntries.reduce((s, e) => s + (parseFloat(e.salesRs) || 0), 0);
+  const totalCredit = creditEntries.reduce((s, e) => s + (parseFloat(e.cashPartyAmount) || 0), 0);
+  const totalPaid = creditEntries.reduce((s, e) => s + (parseFloat(e.amountPaid) || 0), 0);
+  const totalDebited = debitEntries.reduce((s, e) => s + (parseFloat(e.cashPartyAmount) || 0), 0);
+  const netOutstanding = parseFloat((totalCredit - totalPaid - totalDebited).toFixed(2));
 
   return (
     <div className="space-y-6">
@@ -188,7 +191,7 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
             <div className="animate-spin h-6 w-6 border-2 border-adani-navy border-t-transparent rounded-full" />
           </div>
         ) : entries.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-6">No credit transactions recorded in this date range.</p>
+          <p className="text-sm text-gray-500 text-center py-6">No transactions recorded in this date range.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -198,7 +201,8 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                   <th className="py-2">Bill No</th>
                   <th className="py-2 text-right">Diff (KG)</th>
                   <th className="py-2 text-right">Sales (₹)</th>
-                  <th className="py-2 text-right">Credit (₹)</th>
+                  <th className="py-2 text-right">Amount (₹)</th>
+                  <th className="py-2 text-center w-16">Type</th>
                   <th className="py-2 text-center w-24">Status</th>
                   <th className="py-2 text-right">Paid (₹)</th>
                   <th className="py-2 text-center">Pay Date</th>
@@ -206,29 +210,44 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {entries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
+                {entries.map((entry) => {
+                  const isDebit = entry.entryType === 'debit';
+                  return (
+                  <tr key={entry.id} className={`hover:bg-gray-50/50 transition-colors ${isDebit ? 'bg-orange-50/30' : ''}`}>
                     <td className="py-3 font-medium text-gray-900">{formatDisplayDate(entry.date)}</td>
                     <td className="py-3 text-gray-700">{entry.billNumber}</td>
-                    <td className="py-3 text-right text-gray-600">{formatNumber(entry.diffKg)}</td>
-                    <td className="py-3 text-right text-gray-600">{formatINR(entry.salesRs)}</td>
-                    <td className="py-3 text-right font-semibold text-adani-navy">{formatINR(entry.cashPartyAmount)}</td>
-                    <td className="py-3 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                        entry.status === 'paid'
-                          ? 'bg-green-50 text-green-700 border border-green-200'
-                          : entry.status === 'partial'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : 'bg-red-50 text-adani-red border border-red-200'
-                      }`}>
-                        {entry.status}
-                      </span>
+                    <td className="py-3 text-right text-gray-600">{isDebit ? '—' : formatNumber(entry.diffKg)}</td>
+                    <td className="py-3 text-right text-gray-600">{isDebit ? '—' : formatINR(entry.salesRs)}</td>
+                    <td className={`py-3 text-right font-semibold ${isDebit ? 'text-orange-600' : 'text-adani-navy'}`}>
+                      {isDebit ? `−${formatINR(entry.cashPartyAmount)}` : formatINR(entry.cashPartyAmount)}
                     </td>
-                    <td className="py-3 text-right text-green-600 font-semibold">{formatINR(entry.amountPaid || 0)}</td>
+                    <td className="py-3 text-center">
+                      {isDebit ? (
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-orange-50 text-orange-700 border border-orange-200">
+                          debit
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-3 text-center">
+                      {!isDebit && (
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                          entry.status === 'paid'
+                            ? 'bg-green-50 text-green-700 border border-green-200'
+                            : entry.status === 'partial'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-red-50 text-adani-red border border-red-200'
+                        }`}>
+                          {entry.status}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 text-right text-green-600 font-semibold">
+                      {isDebit ? '—' : formatINR(entry.amountPaid || 0)}
+                    </td>
                     <td className="py-3 text-center text-gray-500">{entry.paymentDate ? formatDisplayDate(entry.paymentDate) : '\u2014'}</td>
                     <td className="py-3 text-center no-print">
                       <div className="flex justify-center gap-1.5">
-                        {entry.status !== 'paid' && (
+                        {!isDebit && entry.status !== 'paid' && (
                           <button
                             type="button"
                             onClick={() => handleTriggerPay(entry)}
@@ -237,18 +256,21 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                             Pay
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleExportSinglePDF(entry)}
-                          className="border border-adani-navy text-adani-navy hover:bg-blue-50 text-[11px] font-bold px-2 py-1 rounded transition-colors"
-                          title="Download Invoice PDF"
-                        >
-                          Invoice
-                        </button>
+                        {!isDebit && (
+                          <button
+                            type="button"
+                            onClick={() => handleExportSinglePDF(entry)}
+                            className="border border-adani-navy text-adani-navy hover:bg-blue-50 text-[11px] font-bold px-2 py-1 rounded transition-colors"
+                            title="Download Invoice PDF"
+                          >
+                            Invoice
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {/* Total Row */}
                 <tr className="font-bold border-t-2 border-gray-200 bg-gray-50/50">
                   <td className="py-3 pl-2 text-gray-900" colSpan={2}>GRAND TOTAL</td>
@@ -256,8 +278,21 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                   <td className="py-3 text-right text-gray-900">{formatINR(totalSales)}</td>
                   <td className="py-3 text-right text-adani-navy">{formatINR(totalCredit)}</td>
                   <td className="py-3"></td>
+                  <td className="py-3"></td>
                   <td className="py-3 text-right text-green-600">{formatINR(totalPaid)}</td>
                   <td className="py-3" colSpan={2}></td>
+                </tr>
+                {totalDebited > 0 && (
+                  <tr className="font-bold bg-orange-50/50">
+                    <td className="py-2 pl-2 text-orange-700" colSpan={4}>TOTAL DEBITED</td>
+                    <td className="py-2 text-right text-orange-600">−{formatINR(totalDebited)}</td>
+                    <td className="py-2" colSpan={5}></td>
+                  </tr>
+                )}
+                <tr className="font-extrabold bg-blue-50/50 border-t-2 border-adani-navy">
+                  <td className="py-3 pl-2 text-adani-navy" colSpan={4}>NET OUTSTANDING</td>
+                  <td className={`py-3 text-right ${netOutstanding > 0 ? 'text-adani-red' : 'text-green-600'}`}>{formatINR(netOutstanding)}</td>
+                  <td className="py-3" colSpan={5}></td>
                 </tr>
               </tbody>
             </table>

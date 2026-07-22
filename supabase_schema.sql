@@ -477,3 +477,16 @@ CREATE TRIGGER audit_daily_records
   AFTER INSERT OR UPDATE OR DELETE ON public.daily_records
   FOR EACH ROW EXECUTE FUNCTION public.process_audit_logging();
 
+-- ========================================================
+-- 8. DEBITED CASH SUPPORT (V5 MIGRATION)
+-- ========================================================
+
+-- Add debited_cash JSONB column to daily_records
+ALTER TABLE public.daily_records
+  ADD COLUMN IF NOT EXISTS debited_cash JSONB NOT NULL DEFAULT '[]';
+
+-- Add entry_type column to cash_party_entries for credit vs debit
+ALTER TABLE public.cash_party_entries
+  ADD COLUMN IF NOT EXISTS entry_type VARCHAR(10) NOT NULL DEFAULT 'credit'
+  CHECK (entry_type IN ('credit', 'debit'));
+

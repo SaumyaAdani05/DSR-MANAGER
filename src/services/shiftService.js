@@ -8,7 +8,7 @@ import { saveCashPartyEntry } from './billService.js';
 const syncCashPartyEntries = async (date, shiftNumber, rows) => {
   const existingEntries = await db.cashPartyEntries
     .where('date').equals(date)
-    .and(e => e.shiftNumber === shiftNumber)
+    .and(e => e.shiftNumber === shiftNumber && e.entryType !== 'debit')
     .toArray();
 
   for (let i = 0; i < rows.length; i++) {
@@ -44,6 +44,7 @@ const syncCashPartyEntries = async (date, shiftNumber, rows) => {
             amount_paid: existing.amountPaid,
             payment_date: existing.paymentDate,
             bill_number: existing.billNumber,
+            entry_type: 'credit',
           });
         }
       } else {

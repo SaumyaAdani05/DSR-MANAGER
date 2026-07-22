@@ -165,6 +165,7 @@ const mapToSupabase = (tableName, payload, userId) => {
       user_id: userId,
       expenses: payload.expenses || [],
       cms: parseFloat(payload.cms || 0),
+      debited_cash: payload.debitedCash || payload.debited_cash || [],
       updated_at: payload.updatedAt || new Date().toISOString(),
     };
   }
@@ -313,6 +314,7 @@ const mapFromSupabase = (tableName, row) => {
       date: row.date,
       expenses: row.expenses || [],
       cms: parseFloat(row.cms),
+      debitedCash: row.debited_cash || [],
       updatedAt: row.updated_at,
     };
   }

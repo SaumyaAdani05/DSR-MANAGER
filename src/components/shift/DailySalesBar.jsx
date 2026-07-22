@@ -23,12 +23,19 @@ export default function DailySalesBar({ shiftData = {}, dailyRecord = {} }) {
     : 0;
   const cms = dailyRecord?.cms || 0;
 
+  const debitedCashTotal = Array.isArray(dailyRecord?.debitedCash)
+    ? dailyRecord.debitedCash.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+    : 0;
+
+  // Remaining Cash = Cash Collected (from nozzles) - Expense - CMS + Debited Cash
+  const remainingCash = totals.cash - expense - cms + debitedCashTotal;
+
   return (
     <div className="mt-6 bg-[#EFF6FF] border border-blue-200 rounded-xl p-5 shadow-sm">
       <h3 className="text-xs font-bold text-adani-navy uppercase tracking-wider mb-3">
         DAILY TOTAL (All Saved Shifts)
       </h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {/* Diff */}
         <div className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm transition-all duration-150 hover:shadow-md">
           <span className="block text-[10px] font-semibold text-gray-400 uppercase">Sales Volume</span>
@@ -90,6 +97,25 @@ export default function DailySalesBar({ shiftData = {}, dailyRecord = {} }) {
           <span className="block text-[10px] font-semibold text-gray-400 uppercase">CMS (Bank)</span>
           <span className="text-base font-bold text-green-600 mt-0.5 block">
             ₹{formatNumber(cms)}
+          </span>
+        </div>
+
+        {/* Debited Cash */}
+        <div className="bg-white rounded-lg p-3 border border-orange-200 shadow-sm transition-all duration-150 hover:shadow-md">
+          <span className="block text-[10px] font-semibold text-orange-500 uppercase">Debited Cash</span>
+          <span className="text-base font-bold text-orange-600 mt-0.5 block">
+            ₹{formatNumber(debitedCashTotal)}
+          </span>
+        </div>
+
+        {/* Remaining Cash — Highlighted */}
+        <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-lg p-3 border border-indigo-400 shadow-md transition-all duration-150 hover:shadow-lg ring-1 ring-indigo-300/50">
+          <span className="block text-[10px] font-semibold text-indigo-200 uppercase tracking-wide">Remaining Cash</span>
+          <span className={`text-lg font-extrabold mt-0.5 block ${remainingCash < 0 ? 'text-red-300' : 'text-white'}`}>
+            ₹{formatNumber(remainingCash)}
+          </span>
+          <span className="text-[9px] text-indigo-300 mt-1 block leading-tight">
+            Cash − Exp − CMS + Debit
           </span>
         </div>
       </div>

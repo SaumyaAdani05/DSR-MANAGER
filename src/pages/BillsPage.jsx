@@ -120,6 +120,7 @@ export default function BillsPage() {
                         <th className="py-2">Party Name</th>
                         <th className="py-2 text-right">Total Credit Given</th>
                         <th className="py-2 text-right">Total Settled</th>
+                        <th className="py-2 text-right">Total Debited</th>
                         <th className="py-2 text-right">Net Outstanding</th>
                         <th className="py-2 text-center">Last Active</th>
                         <th className="py-2 text-center w-28">Actions</th>
@@ -138,6 +139,7 @@ export default function BillsPage() {
                           </td>
                           <td className="py-3 text-right text-gray-700">{formatINR(p.totalAmount || 0)}</td>
                           <td className="py-3 text-right text-green-600 font-semibold">{formatINR(p.totalPaid || 0)}</td>
+                          <td className="py-3 text-right text-orange-600 font-semibold">{formatINR(p.totalDebited || 0)}</td>
                           <td className="py-3 text-right font-extrabold">
                             <span className={p.outstanding > 0 ? 'text-adani-red' : 'text-green-600'}>
                               {formatINR(p.outstanding || 0)}

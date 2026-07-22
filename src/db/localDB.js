@@ -116,6 +116,24 @@ db.version(4).stores({
   });
 });
 
+db.version(5).stores({
+  // Add entryType index to cashPartyEntries for credit vs debit filtering
+  cashPartyEntries: '++id, date, shiftNumber, rowIndex, partyId, partyName, diffKg, salesRs, cashPartyAmount, status, amountPaid, paymentDate, billNumber, entryType, syncedAt',
+}).upgrade(async (tx) => {
+  // Backfill existing cash party entries with entryType: 'credit'
+  await tx.table('cashPartyEntries').toCollection().modify(entry => {
+    if (!entry.entryType) {
+      entry.entryType = 'credit';
+    }
+  });
+  // Backfill existing daily records with debitedCash: []
+  await tx.table('dailyRecords').toCollection().modify(record => {
+    if (!record.debitedCash) {
+      record.debitedCash = [];
+    }
+  });
+});
+
 
 // Seed default owner settings on creation
 db.on('populate', (tx) => {
