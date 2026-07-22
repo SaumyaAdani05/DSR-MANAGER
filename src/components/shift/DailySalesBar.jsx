@@ -27,8 +27,12 @@ export default function DailySalesBar({ shiftData = {}, dailyRecord = {} }) {
     ? dailyRecord.debitedCash.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
     : 0;
 
-  // Remaining Cash = Cash Collected (from nozzles) - Expense - CMS + Debited Cash
-  const remainingCash = totals.cash - expense - cms + debitedCashTotal;
+  const givenCashTotal = Array.isArray(dailyRecord?.givenCash)
+    ? dailyRecord.givenCash.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+    : 0;
+
+  // Remaining Cash = Cash Collected (from nozzles) - Expense - CMS - Given Cash + Receiving Cash
+  const remainingCash = totals.cash - expense - cms - givenCashTotal + debitedCashTotal;
 
   return (
     <div className="mt-6 bg-[#EFF6FF] border border-blue-200 rounded-xl p-5 shadow-sm">
@@ -78,7 +82,7 @@ export default function DailySalesBar({ shiftData = {}, dailyRecord = {} }) {
 
         {/* Cash Party */}
         <div className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm transition-all duration-150 hover:shadow-md">
-          <span className="block text-[10px] font-semibold text-gray-400 uppercase">Cash Party</span>
+          <span className="block text-[10px] font-semibold text-gray-400 uppercase">Given Cash (Credit)</span>
           <span className="text-base font-bold text-adani-navy mt-0.5 block">
             ₹{formatNumber(totals.cashParty)}
           </span>
@@ -100,9 +104,17 @@ export default function DailySalesBar({ shiftData = {}, dailyRecord = {} }) {
           </span>
         </div>
 
+        {/* Given Cash */}
+        <div className="bg-white rounded-lg p-3 border border-blue-200 shadow-sm transition-all duration-150 hover:shadow-md">
+          <span className="block text-[10px] font-semibold text-blue-500 uppercase">Given Cash</span>
+          <span className="text-base font-bold text-blue-600 mt-0.5 block">
+            ₹{formatNumber(givenCashTotal)}
+          </span>
+        </div>
+
         {/* Debited Cash */}
         <div className="bg-white rounded-lg p-3 border border-orange-200 shadow-sm transition-all duration-150 hover:shadow-md">
-          <span className="block text-[10px] font-semibold text-orange-500 uppercase">Debited Cash</span>
+          <span className="block text-[10px] font-semibold text-orange-500 uppercase">Receiving Cash</span>
           <span className="text-base font-bold text-orange-600 mt-0.5 block">
             ₹{formatNumber(debitedCashTotal)}
           </span>
@@ -115,7 +127,7 @@ export default function DailySalesBar({ shiftData = {}, dailyRecord = {} }) {
             ₹{formatNumber(remainingCash)}
           </span>
           <span className="text-[9px] text-indigo-300 mt-1 block leading-tight">
-            Cash − Exp − CMS + Debit
+            Cash − Exp − CMS − Given + Received
           </span>
         </div>
       </div>

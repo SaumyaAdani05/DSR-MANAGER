@@ -15,15 +15,15 @@ export const validateRow = (row, rowIndex) => {
   if (row.cash < 0) errors.push({ field: 'Cash', message: 'Cash cannot be negative' });
   if (row.cc < 0) errors.push({ field: 'CC', message: 'CC cannot be negative' });
   if (row.upi < 0) errors.push({ field: 'UPI', message: 'UPI cannot be negative' });
-  if (row.cashParty < 0) errors.push({ field: 'Cash Party', message: 'Cash Party cannot be negative' });
+  if (row.cashParty < 0) errors.push({ field: 'Given Cash', message: 'Given Cash cannot be negative' });
   if (row.cashParty > 0 && !row.partyId) {
-    errors.push({ field: 'Cash Party', message: 'Party selection is required when Cash Party amount is entered' });
+    errors.push({ field: 'Given Cash', message: 'Party selection is required when Given Cash amount is entered' });
   }
   if (row.salesRs > 0 && !isReconciled(row)) {
     const totalPayments = (row.cash || 0) + (row.cc || 0) + (row.upi || 0) + (row.cashParty || 0);
     errors.push({
       field: 'Reconciliation',
-      message: `Cash + CC + UPI + Cash Party (${totalPayments.toFixed(2)}) ≠ Sales (${row.salesRs.toFixed(2)})`,
+      message: `Cash + CC + UPI + Given Cash (${totalPayments.toFixed(2)}) ≠ Sales (${row.salesRs.toFixed(2)})`,
     });
   }
 
@@ -83,6 +83,19 @@ export const validateDailyRecord = (record) => {
   }
   if (record.cms < 0) {
     errors.push('CMS cannot be negative');
+  }
+  if (record.givenCash && Array.isArray(record.givenCash)) {
+    record.givenCash.forEach((given, idx) => {
+      const amt = parseFloat(given.amount);
+      if (isNaN(amt)) {
+        errors.push(`Given Cash #${idx + 1} amount must be a number`);
+      } else if (amt < 0) {
+        errors.push(`Given Cash #${idx + 1} amount cannot be negative`);
+      }
+      if (amt > 0 && !given.partyId) {
+        errors.push(`Given Cash #${idx + 1} requires a party selection`);
+      }
+    });
   }
   if (record.debitedCash && Array.isArray(record.debitedCash)) {
     record.debitedCash.forEach((debit, idx) => {

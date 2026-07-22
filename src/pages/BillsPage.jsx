@@ -118,9 +118,9 @@ export default function BillsPage() {
                     <thead>
                       <tr className="border-b border-gray-100 text-gray-400 font-medium pb-2">
                         <th className="py-2">Party Name</th>
-                        <th className="py-2 text-right">Total Credit Given</th>
+                        <th className="py-2 text-right">Total Given Cash (Credit)</th>
                         <th className="py-2 text-right">Total Settled</th>
-                        <th className="py-2 text-right">Total Debited</th>
+                        <th className="py-2 text-right">Total Received</th>
                         <th className="py-2 text-right">Net Outstanding</th>
                         <th className="py-2 text-center">Last Active</th>
                         <th className="py-2 text-center w-28">Actions</th>

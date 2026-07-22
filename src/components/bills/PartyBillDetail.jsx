@@ -201,7 +201,7 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                   <th className="py-2">Bill No</th>
                   <th className="py-2 text-right">Diff (KG)</th>
                   <th className="py-2 text-right">Sales (₹)</th>
-                  <th className="py-2 text-right">Amount (₹)</th>
+                  <th className="py-2 text-right">Given Cash (₹)</th>
                   <th className="py-2 text-center w-16">Type</th>
                   <th className="py-2 text-center w-24">Status</th>
                   <th className="py-2 text-right">Paid (₹)</th>
@@ -284,7 +284,7 @@ export default function PartyBillDetail({ party, stationName, onBack }) {
                 </tr>
                 {totalDebited > 0 && (
                   <tr className="font-bold bg-orange-50/50">
-                    <td className="py-2 pl-2 text-orange-700" colSpan={4}>TOTAL DEBITED</td>
+                    <td className="py-2 pl-2 text-orange-700" colSpan={4}>TOTAL RECEIVED</td>
                     <td className="py-2 text-right text-orange-600">−{formatINR(totalDebited)}</td>
                     <td className="py-2" colSpan={5}></td>
                   </tr>

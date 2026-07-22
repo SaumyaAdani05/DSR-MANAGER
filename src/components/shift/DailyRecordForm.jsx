@@ -8,6 +8,7 @@ import { getParties } from '../../services/partyService';
 export default function DailyRecordForm({ date, initialRecord, onSave, readOnly }) {
   const [expenses, setExpenses] = useState([]);
   const [cms, setCms] = useState(0);
+  const [givenCash, setGivenCash] = useState([]);
   const [debitedCash, setDebitedCash] = useState([]);
   const [parties, setParties] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -31,6 +32,7 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
     if (initialRecord) {
       setExpenses(Array.isArray(initialRecord.expenses) ? initialRecord.expenses : []);
       setCms(initialRecord.cms || 0);
+      setGivenCash(Array.isArray(initialRecord.givenCash) ? initialRecord.givenCash : []);
       setDebitedCash(Array.isArray(initialRecord.debitedCash) ? initialRecord.debitedCash : []);
       setIsEditing(false);
     }
@@ -44,6 +46,11 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
         note: (e.note || '').trim()
       })),
       cms: parseFloat(cms) || 0,
+      givenCash: givenCash.map(d => ({
+        amount: parseFloat(d.amount) || 0,
+        partyId: d.partyId || '',
+        partyName: d.partyName || '',
+      })),
       debitedCash: debitedCash.map(d => ({
         amount: parseFloat(d.amount) || 0,
         partyId: d.partyId || '',
@@ -86,6 +93,35 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
     setExpenses(expenses.filter((_, i) => i !== index));
   };
 
+  // Given Cash handlers
+  const handleAddGiven = () => {
+    setGivenCash([...givenCash, { amount: 0, partyId: '', partyName: '' }]);
+  };
+
+  const handleGivenChange = (index, field, value) => {
+    const updated = [...givenCash];
+    updated[index] = {
+      ...updated[index],
+      [field]: value,
+    };
+    setGivenCash(updated);
+  };
+
+  const handleGivenPartyChange = (index, partyId) => {
+    const party = parties.find(p => p.id === partyId);
+    const updated = [...givenCash];
+    updated[index] = {
+      ...updated[index],
+      partyId: party?.id || '',
+      partyName: party?.name || '',
+    };
+    setGivenCash(updated);
+  };
+
+  const handleRemoveGiven = (index) => {
+    setGivenCash(givenCash.filter((_, i) => i !== index));
+  };
+
   // Debit handlers
   const handleAddDebit = () => {
     setDebitedCash([...debitedCash, { amount: 0, partyId: '', partyName: '' }]);
@@ -116,6 +152,7 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
   };
 
   const totalExpense = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+  const totalGiven = givenCash.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
   const totalDebited = debitedCash.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
 
   const isFormDisabled = readOnly || (!isEditing && initialRecord?.updatedAt);
@@ -126,7 +163,7 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
     <div className="bg-white rounded-lg shadow-card p-6 border border-gray-100 mt-6">
       <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
         <h3 className="text-sm font-bold text-adani-navy uppercase tracking-wider">
-          Daily Expenses, CMS & Debited Cash (Date Level)
+          Daily Expenses, CMS & Receiving Cash (Date Level)
         </h3>
         {readOnly && (
           <span className="px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-adani-gray rounded-full">
@@ -249,15 +286,109 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
           </div>
         </div>
 
+        {/* ===== GIVEN CASH SECTION ===== */}
+        <div className="border-t border-gray-100 pt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Given Cash
+              </span>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Cash given to someone (Credit Parties)
+              </p>
+            </div>
+            {!isFormDisabled && (
+              <button
+                type="button"
+                onClick={handleAddGiven}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Add Given Row
+              </button>
+            )}
+          </div>
+
+          {givenCash.length === 0 ? (
+            <p className="text-sm text-gray-400 italic py-4 text-center bg-blue-50/50 rounded-md border border-dashed border-blue-200">
+              No given cash entries for this day.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {/* Header labels for larger screens */}
+              <div className="hidden md:flex gap-4 px-1 text-xs font-bold text-gray-400 uppercase">
+                <div className="w-1/3">Amount (₹)</div>
+                <div className="flex-1">Credit Party</div>
+                <div className="w-10"></div>
+              </div>
+
+              {givenCash.map((given, index) => (
+                <div key={index} className="flex flex-col md:flex-row gap-3 md:gap-4 items-start md:items-center bg-blue-50/30 md:bg-transparent p-3 md:p-0 rounded-lg md:rounded-none border md:border-0 border-blue-100">
+                  <div className="w-full md:w-1/3">
+                    <label className="block md:hidden text-[10px] font-bold text-gray-400 uppercase mb-1">
+                      Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={given.amount === 0 ? '' : given.amount}
+                      disabled={isFormDisabled}
+                      onChange={(e) => handleGivenChange(index, 'amount', parseFloat(e.target.value) || 0)}
+                      className="w-full h-10 px-3 text-sm border border-adani-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed font-medium text-gray-900 bg-white"
+                    />
+                  </div>
+
+                  <div className="w-full flex-1">
+                    <label className="block md:hidden text-[10px] font-bold text-gray-400 uppercase mb-1">
+                      Credit Party
+                    </label>
+                    <SearchDropdown
+                      options={partyOptions}
+                      value={given.partyId}
+                      onChange={(partyId) => handleGivenPartyChange(index, partyId)}
+                      placeholder="Select party..."
+                      disabled={isFormDisabled}
+                    />
+                  </div>
+
+                  {!isFormDisabled && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveGiven(index)}
+                      className="h-10 w-10 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-md transition-colors self-end md:self-auto"
+                      title="Delete given entry"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {givenCash.length > 0 && (
+            <div className="flex justify-between items-center bg-blue-50 border border-blue-100 p-3.5 rounded-lg">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Given Cash:</span>
+              <span className="text-base font-bold text-blue-600">₹{totalGiven.toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+
         {/* ===== DEBITED CASH SECTION ===== */}
         <div className="border-t border-gray-100 pt-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Debited Cash
+                Receiving Cash
               </span>
               <p className="text-[10px] text-gray-400 mt-0.5">
-                Cash collected by credit parties, standing payments, or borrowed cash
+                Cash received from credit parties towards outstanding dues
               </p>
             </div>
             {!isFormDisabled && (
@@ -269,14 +400,14 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
                 </svg>
-                Add Debit Row
+                Add Receiving Row
               </button>
             )}
           </div>
 
           {debitedCash.length === 0 ? (
             <p className="text-sm text-gray-400 italic py-4 text-center bg-orange-50/50 rounded-md border border-dashed border-orange-200">
-              No debited cash entries for this day.
+              No receiving cash entries for this day.
             </p>
           ) : (
             <div className="space-y-3">
@@ -337,7 +468,7 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
 
           {debitedCash.length > 0 && (
             <div className="flex justify-between items-center bg-orange-50 border border-orange-100 p-3.5 rounded-lg">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Debited Cash:</span>
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Receiving Cash:</span>
               <span className="text-base font-bold text-orange-600">₹{totalDebited.toFixed(2)}</span>
             </div>
           )}
@@ -359,6 +490,7 @@ export default function DailyRecordForm({ date, initialRecord, onSave, readOnly 
                     onClick={() => {
                       setExpenses(Array.isArray(initialRecord.expenses) ? initialRecord.expenses : []);
                       setCms(initialRecord.cms || 0);
+                      setGivenCash(Array.isArray(initialRecord.givenCash) ? initialRecord.givenCash : []);
                       setDebitedCash(Array.isArray(initialRecord.debitedCash) ? initialRecord.debitedCash : []);
                       setIsEditing(false);
                     }}

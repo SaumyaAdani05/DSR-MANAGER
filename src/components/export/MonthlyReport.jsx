@@ -110,7 +110,7 @@ const MonthlyReport = ({ isOpen, onClose, stationName }) => {
                   <th className="px-3 py-2 text-right font-semibold">Cash</th>
                   <th className="px-3 py-2 text-right font-semibold">CC</th>
                   <th className="px-3 py-2 text-right font-semibold">UPI</th>
-                  <th className="px-3 py-2 text-right font-semibold">Cash Party</th>
+                  <th className="px-3 py-2 text-right font-semibold">Given Cash</th>
                   <th className="px-3 py-2 text-right font-semibold">Expense</th>
                   <th className="px-3 py-2 text-right font-semibold">CMS</th>
                 </tr>

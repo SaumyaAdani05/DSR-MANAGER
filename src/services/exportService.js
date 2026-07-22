@@ -36,7 +36,7 @@ export const exportDSR = (date, shift1, shift2, shift3, stationName, dailyRecord
       [sanitizeCellVal(stationName)],
       [`Date: ${formatDisplayDate(date)}`],
       [],
-      ['Nozzle', 'Employee', 'Opening Reading', 'Closing Reading', 'Difference (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Cash Party'],
+      ['Nozzle', 'Employee', 'Opening Reading', 'Closing Reading', 'Difference (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Credit Party'],
       ...shift.rows.map((r) => [
         sanitizeCellVal(r.nozzleName),
         sanitizeCellVal(r.employeeName),
@@ -88,7 +88,7 @@ export const exportDSR = (date, shift1, shift2, shift3, stationName, dailyRecord
     ['Total Sales (₹)', (shift1.totals.totalSalesRs || 0) + (shift2.totals.totalSalesRs || 0) + (shift3.totals.totalSalesRs || 0), ''],
     ['Credit Card Collected', (shift1.totals.totalCC || 0) + (shift2.totals.totalCC || 0) + (shift3.totals.totalCC || 0), ''],
     ['UPI Collected', (shift1.totals.totalUPI || 0) + (shift2.totals.totalUPI || 0) + (shift3.totals.totalUPI || 0), ''],
-    ['Cash Party Total', (shift1.totals.totalCashParty || 0) + (shift2.totals.totalCashParty || 0) + (shift3.totals.totalCashParty || 0), ''],
+    ['Credit Party Total', (shift1.totals.totalCashParty || 0) + (shift2.totals.totalCashParty || 0) + (shift3.totals.totalCashParty || 0), ''],
     ['Cash Collected', totalCashCollected, 'Total from all shifts'],
   ];
 
@@ -126,7 +126,7 @@ export const exportMonthlyPDF = (monthName, year, rows, grandTotals, stationName
 
   autoTable(pdfDoc, {
     startY: 30,
-    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Cash Party', 'Expense', 'CMS']],
+    head: [['Date', 'Diff (KG)', 'Sales (₹)', 'Cash', 'CC', 'UPI', 'Credit Party', 'Expense', 'CMS']],
     body: rows.map((r) => [
       formatDisplayDate(r.date),
       r.totalDifference.toFixed(2),

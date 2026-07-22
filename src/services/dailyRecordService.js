@@ -1,6 +1,6 @@
 import { db } from '../db/localDB.js';
 import { queueSync } from './syncService.js';
-import { saveDebitCashPartyEntry, removeDebitEntriesForDate } from './billService.js';
+import { saveDebitCashPartyEntry, removeDebitEntriesForDate, saveDailyCreditCashPartyEntry, removeDailyCreditEntriesForDate } from './billService.js';
 
 /**
  * Fetch daily record (expenses, cms, debitedCash) for a given date
@@ -11,6 +11,7 @@ export const getDailyRecord = async (date) => {
   if (result) {
     return {
       ...result,
+      givenCash: result.givenCash || [],
       debitedCash: result.debitedCash || [],
     };
   }
@@ -18,6 +19,7 @@ export const getDailyRecord = async (date) => {
     date,
     expenses: [],
     cms: 0,
+    givenCash: [],
     debitedCash: [],
   };
 };
@@ -25,10 +27,19 @@ export const getDailyRecord = async (date) => {
 /**
  * Save daily record (expenses, cms, debitedCash) for a given date
  * @param {string} date - Date in YYYY-MM-DD format
- * @param {{expenses: Array<{amount: number, note: string}>, cms: number, debitedCash: Array<{amount: number, partyId: string, partyName: string}>}} record
+ * @param {{expenses: Array<{amount: number, note: string}>, cms: number, givenCash: Array<{amount: number, partyId: string, partyName: string}>, debitedCash: Array<{amount: number, partyId: string, partyName: string}>}} record
  */
 export const saveDailyRecord = async (date, record) => {
   const now = new Date().toISOString();
+  
+  const givenCash = Array.isArray(record.givenCash)
+    ? record.givenCash.map(d => ({
+        amount: parseFloat(d.amount || 0),
+        partyId: d.partyId || '',
+        partyName: d.partyName || '',
+      }))
+    : [];
+
   const debitedCash = Array.isArray(record.debitedCash)
     ? record.debitedCash.map(d => ({
         amount: parseFloat(d.amount || 0),
@@ -46,6 +57,7 @@ export const saveDailyRecord = async (date, record) => {
         }))
       : [],
     cms: parseFloat(record.cms || 0),
+    givenCash,
     debitedCash,
     updatedAt: now,
   };
@@ -67,11 +79,27 @@ export const saveDailyRecord = async (date, record) => {
     }
   }
 
+  // Sync daily record credit entries (given cash) to cash_party_entries
+  await removeDailyCreditEntriesForDate(date);
+  for (let i = 0; i < givenCash.length; i++) {
+    const d = givenCash[i];
+    if (d.amount > 0 && d.partyId) {
+      await saveDailyCreditCashPartyEntry({
+        date,
+        rowIndex: i,
+        partyId: d.partyId,
+        partyName: d.partyName,
+        amount: d.amount,
+      });
+    }
+  }
+
   // Queue to sync to Supabase
   await queueSync('daily_records', date, {
     date,
     expenses: payload.expenses,
     cms: payload.cms,
+    givenCash: payload.givenCash,
     debitedCash: payload.debitedCash,
     updatedAt: now,
   });

@@ -126,10 +126,13 @@ db.version(5).stores({
       entry.entryType = 'credit';
     }
   });
-  // Backfill existing daily records with debitedCash: []
+  // Backfill existing daily records with debitedCash: [] and givenCash: []
   await tx.table('dailyRecords').toCollection().modify(record => {
     if (!record.debitedCash) {
       record.debitedCash = [];
+    }
+    if (!record.givenCash) {
+      record.givenCash = [];
     }
   });
 });

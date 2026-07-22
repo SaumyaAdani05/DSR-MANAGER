@@ -281,7 +281,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
               <th className="px-2 py-3 text-right text-xs font-semibold w-[110px]">CC</th>
               <th className="px-2 py-3 text-right text-xs font-semibold w-[110px]">UPI</th>
               <th className="px-2 py-3 text-right text-xs font-semibold w-[130px]">Cash</th>
-              <th className="px-2 py-3 text-right text-xs font-semibold w-[110px]">Cash Party</th>
+              <th className="px-2 py-3 text-right text-xs font-semibold w-[110px]">Given Cash</th>
               <th className="px-2 py-3 w-8"></th>
             </tr>
           </thead>

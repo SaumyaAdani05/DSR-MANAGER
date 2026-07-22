@@ -57,7 +57,7 @@ export default function CashPartyPopup({ isOpen, onClose, onSelect, onCancel }) 
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Assign Credit Party">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Assign Credit Party for Given Cash">
       <div className="space-y-4">
         {!showAddNew ? (
           <>

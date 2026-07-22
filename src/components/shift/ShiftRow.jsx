@@ -284,7 +284,7 @@ const ShiftRow = ({
         </div>
       </td>
 
-      {/* Cash Party */}
+      {/* Given Cash (Credit) */}
       <td className="px-2 py-2 w-[110px]">
         <input
           type="number"
@@ -296,7 +296,7 @@ const ShiftRow = ({
           onBlur={handleCashPartyBlur}
           disabled={readOnly}
           className="w-full h-10 px-3 text-right text-sm border border-adani-border rounded-md focus:outline-none focus:ring-2 focus:ring-adani-navy disabled:bg-gray-100 disabled:cursor-not-allowed"
-          aria-label={`Cash party for row ${index + 1}`}
+          aria-label={`Given cash for row ${index + 1}`}
         />
         {row.partyName && (
           <div className="mt-1 text-[11px] font-semibold text-adani-navy bg-blue-50 px-1.5 py-0.5 rounded text-center truncate max-w-[110px]" title={row.partyName}>

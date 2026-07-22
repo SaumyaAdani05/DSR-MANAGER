@@ -89,12 +89,71 @@ export const saveDebitCashPartyEntry = async ({ date, rowIndex, partyId, partyNa
 };
 
 /**
+ * Save a credit cash party entry (increases party outstanding) for daily records
+ */
+export const saveDailyCreditCashPartyEntry = async ({ date, rowIndex, partyId, partyName, amount }) => {
+  const id = uuidv4();
+  const billNumber = await getNextBillNumber('BILL');
+  const record = {
+    id,
+    date,
+    shiftNumber: 0, // Not tied to a shift
+    rowIndex,
+    partyId,
+    partyName,
+    diffKg: 0,
+    salesRs: 0,
+    cashPartyAmount: parseFloat(amount),
+    entryType: 'credit',
+    status: 'pending',
+    amountPaid: 0,
+    paymentDate: null,
+    billNumber,
+    syncedAt: null,
+  };
+  await db.cashPartyEntries.add(record);
+
+  await queueSync('cash_party_entries', id, {
+    id,
+    date: record.date,
+    shift_number: 0,
+    row_index: rowIndex,
+    party_id: partyId,
+    party_name: partyName,
+    diff_kg: 0,
+    sales_rs: 0,
+    cash_party_amount: parseFloat(amount),
+    status: 'pending',
+    amount_paid: 0,
+    payment_date: null,
+    bill_number: billNumber,
+    entry_type: 'credit',
+  });
+  return record;
+};
+
+/**
  * Remove all debit entries for a given date (used before re-saving)
  */
 export const removeDebitEntriesForDate = async (date) => {
   const entries = await db.cashPartyEntries
     .where('date').equals(date)
     .and(e => e.entryType === 'debit')
+    .toArray();
+  
+  for (const entry of entries) {
+    await db.cashPartyEntries.delete(entry.id);
+    await queueSync('cash_party_entries', entry.id, null, 'delete');
+  }
+};
+
+/**
+ * Remove all daily credit entries for a given date (used before re-saving)
+ */
+export const removeDailyCreditEntriesForDate = async (date) => {
+  const entries = await db.cashPartyEntries
+    .where('date').equals(date)
+    .and(e => e.entryType === 'credit' && e.shiftNumber === 0)
     .toArray();
   
   for (const entry of entries) {

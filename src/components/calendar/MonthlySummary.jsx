@@ -49,7 +49,7 @@ export default function MonthlySummary({ monthName, year, totals }) {
 
         {/* Cash Party */}
         <div className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
-          <span className="block text-[10px] font-semibold text-gray-400 uppercase">Cash Party</span>
+          <span className="block text-[10px] font-semibold text-gray-400 uppercase">Given Cash (Credit)</span>
           <span className="text-base font-bold text-adani-navy mt-0.5 block">
             ₹{formatNumber(totals.totalCashParty || 0)}
           </span>
