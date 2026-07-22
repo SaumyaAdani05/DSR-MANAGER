@@ -7,3 +7,6 @@ dist
 .vercel
 .env*
 
+# Agents
+.agents/
+skills-lock.json
