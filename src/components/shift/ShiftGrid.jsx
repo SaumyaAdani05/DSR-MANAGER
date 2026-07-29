@@ -33,6 +33,7 @@ const createEmptyRow = (index) => ({
   notes50: 0,
   notes20: 0,
   notes10: 0,
+  coins: 0,
   coins5: 0,
   coins2: 0,
   coins1: 0,
@@ -60,9 +61,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
     notes50: 0,
     notes20: 0,
     notes10: 0,
-    coins5: 0,
-    coins2: 0,
-    coins1: 0,
+    coins: 0,
   });
 
   // Cash Party state
@@ -75,6 +74,9 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
   const handleOpenNotesModal = (index) => {
     const row = rows[index];
     setNotesModalRowIndex(index);
+    const existingCoins = row.coins != null 
+      ? parseFloat(row.coins) || 0
+      : (parseFloat(row.coins5 || 0) * 5 + parseFloat(row.coins2 || 0) * 2 + parseFloat(row.coins1 || 0) * 1);
     setModalNotes({
       notes500: row.notes500 || 0,
       notes200: row.notes200 || 0,
@@ -82,9 +84,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
       notes50: row.notes50 || 0,
       notes20: row.notes20 || 0,
       notes10: row.notes10 || 0,
-      coins5: row.coins5 || 0,
-      coins2: row.coins2 || 0,
-      coins1: row.coins1 || 0,
+      coins: existingCoins,
     });
   };
 
@@ -92,7 +92,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
     if (shiftData?.rows?.length) {
       const resolvedPrice = shiftData.price || carryoverData?.price || 0;
       setPrice(resolvedPrice);
-      
+
       if (shiftData.price === 0 && resolvedPrice > 0) {
         const recalculatedRows = shiftData.rows.map((row) => {
           if (row.closingReading > 0 && row.openingReading > 0) {
@@ -368,9 +368,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
           (modalNotes.notes50 || 0) * 50 +
           (modalNotes.notes20 || 0) * 20 +
           (modalNotes.notes10 || 0) * 10 +
-          (modalNotes.coins5 || 0) * 5 +
-          (modalNotes.coins2 || 0) * 2 +
-          (modalNotes.coins1 || 0) * 1;
+          (modalNotes.coins || 0) * 1
         const diff = expectedCash - notesTotal;
 
         return (
@@ -399,24 +397,39 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                   { label: '₹50 Note', value: 50, key: 'notes50' },
                   { label: '₹20 Note', value: 20, key: 'notes20' },
                   { label: '₹10 Note', value: 10, key: 'notes10' },
-                  { label: '₹5 Coin', value: 5, key: 'coins5' },
-                  { label: '₹2 Coin', value: 2, key: 'coins2' },
-                  { label: '₹1 Coin', value: 1, key: 'coins1' },
+                  { label: 'Coins (₹)', value: 1, key: 'coins', isDecimal: true },
                 ].map((note) => {
                   const qty = modalNotes[note.key] === 0 ? '' : modalNotes[note.key];
-                  const amt = (modalNotes[note.key] || 0) * note.value;
+                  const amt = note.isDecimal
+                    ? (parseFloat(modalNotes[note.key]) || 0)
+                    : (modalNotes[note.key] || 0) * note.value;
                   return (
                     <div key={note.key} className="grid grid-cols-3 items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded-md">
                       <span className="text-sm font-medium text-gray-700">{note.label}</span>
                       <div className="flex justify-center">
                         <input
                           type="number"
+                          step={note.isDecimal ? "0.01" : "1"}
                           min="0"
                           placeholder="0"
                           value={qty}
                           disabled={!isWritable}
                           onChange={(e) => {
-                            const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value) || 0);
+                            let val;
+                            let rawVal = e.target.value;
+                            if (rawVal === '') {
+                              val = 0;
+                            } else if (note.isDecimal) {
+                              if (rawVal.includes('.')) {
+                                const [intPart, decPart] = rawVal.split('.');
+                                if (decPart && decPart.length > 2) {
+                                  rawVal = `${intPart}.${decPart.slice(0, 2)}`;
+                                }
+                              }
+                              val = Math.max(0, parseFloat(rawVal) || 0);
+                            } else {
+                              val = Math.max(0, parseInt(rawVal) || 0);
+                            }
                             setModalNotes((prev) => ({ ...prev, [note.key]: val }));
                           }}
                           className="w-24 h-8 px-2 text-right text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-adani-navy focus:border-adani-navy disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -460,6 +473,7 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                         notes50: 0,
                         notes20: 0,
                         notes10: 0,
+                        coins: 0,
                         coins5: 0,
                         coins2: 0,
                         coins1: 0,
@@ -492,9 +506,10 @@ const ShiftGrid = ({ date, shiftNumber, shiftData, nozzles, employees, onSave, r
                           notes50: modalNotes.notes50 || 0,
                           notes20: modalNotes.notes20 || 0,
                           notes10: modalNotes.notes10 || 0,
-                          coins5: modalNotes.coins5 || 0,
-                          coins2: modalNotes.coins2 || 0,
-                          coins1: modalNotes.coins1 || 0,
+                          coins: parseFloat(modalNotes.coins) || 0,
+                          coins5: 0,
+                          coins2: 0,
+                          coins1: 0,
                           cash: notesTotal,
                           hasNotes: true,
                         };
